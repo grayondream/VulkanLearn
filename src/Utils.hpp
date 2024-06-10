@@ -13,9 +13,5 @@ namespace Utils {
 		std::vector<VkLayerProperties> QueryVkValidationLayers();
 
 		bool CheckValidationLayerSupport(const std::vector<const char*> &layers);
-
-		void RemoveVkUnSupportExtensions(std::vector<const char*>& ls);
-
-		std::vector<const char*> QuerySupportedGlfwExtension();
 	}
 }

@@ -1,4 +1,4 @@
-#include "Utils.h"
+#include "Utils.hpp"
 #include "Log.hpp"
 #include <GLFW/glfw3.h>
 #include <iostream>
@@ -62,27 +62,6 @@ namespace Utils {
 			}
 
 			return false;
-		}
-
-		void RemoveVkUnSupportExtensions(std::vector<const char*>& ls) {
-			auto vkExts = QueryVkValidationLayers();
-			for (auto it = ls.begin(); it != ls.end(); ){
-				auto name = *it;
-				auto isSame = [&name](const VkLayerProperties& p) {
-					return p.layerName == std::string_view(name);
-				};
-				if (std::end(vkExts) == std::find_if(vkExts.begin(), vkExts.end(), isSame)) {
-					it = ls.erase(it);
-				} else {
-					it++;
-				}
-			}
-		}
-
-		std::vector<const char*> QuerySupportedGlfwExtension() {
-			auto exts = QueryGlfwExtension();
-			RemoveVkUnSupportExtensions(exts);
-			return exts;
 		}
 	}
 }
