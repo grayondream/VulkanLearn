@@ -22,9 +22,7 @@ using namespace Vulkan;
 
 static constexpr const unsigned int WIN_HEIGHT = 600;
 static constexpr const unsigned int WIN_WIDTH = 800;
-
-
-
+ 
 std::error_code Application::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);

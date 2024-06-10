@@ -2,6 +2,8 @@
 #include "Utils.hpp"
 #include "Log.hpp"
 #include "ErrorCode.hpp"
+#include <stdexcept>
+#include <system_error>
 #ifndef NDEBUG
 
 using namespace Utils;
@@ -58,6 +60,33 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
     }
 }
 
+inline static bool CheckDeviceSuitable(const vk::PhysicalDevice& device){
+    auto f = device.getFeatures(); 
+    return Utils::Vulkan::QueryQueueFamilyIndices(device) && f.geometryShader? true : false;
+}
+
+void VulkanInstance::SelectRunningDevice(){
+    auto devices = instance.enumeratePhysicalDevices();
+    if(devices.empty()){
+        throw std::runtime_error("No Physical Device found");
+    }
+
+    for(auto i = 0;i < devices.size();i ++){
+        //LOGI("The {}th device is {}", i, devices[i].)
+        if(CheckDeviceSuitable(devices[i])){
+            _phyDevice = devices[i];
+            break;//only find one device;
+        }
+    }
+
+    if(!_phyDevice){
+        throw std::runtime_error("The device is nullptr, can not find any suitable device");
+    }
+
+    auto phyDevicePro = _phyDevice.getProperties();
+    LOGI("Select Device Id {} Device name {}", phyDevicePro.deviceID, std::string(phyDevicePro.deviceName));
+}
+
 void VulkanInstance::destroy(){
     if(gEnableValidationLayer){
         DestroyDebugUtilsMessengerEXT(instance, callback, nullptr);
@@ -100,6 +129,7 @@ std::error_code VulkanInstance::initialize() {
         std::runtime_error("Failed to create vulkan instance");
     }
 
+    SelectRunningDevice();
     return {};
 }
 
