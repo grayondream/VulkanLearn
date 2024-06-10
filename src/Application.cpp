@@ -21,12 +21,16 @@ using namespace vk;
 static constexpr const unsigned int WIN_HEIGHT = 600;
 static constexpr const unsigned int WIN_WIDTH = 800;
 
-#ifdef NDEBUG
+#ifndef NDEBUG
+static constexpr const bool gEnableValidationLayer = true;
 const std::vector<const char*> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
+#else
+static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
 
+using namespace Utils::Vulkan;
 class VulkanInstance {
 public:
     std::error_code initialize() {
@@ -43,22 +47,16 @@ public:
             LOGI("The {} extension,version:{}, name:{}", i, e.specVersion, e.extensionName);
         }
         
-#ifdef NDEBUG
-        if (!Utils::Vulkan::CheckValidationLayerSupport(kValidationLayers)) {
+        if (gEnableValidationLayer && !CheckValidationLayerSupport(kValidationLayers)) {
             LOGE("The device donot support validation layer provided!");
             return MakeGenerateError(AppStatus::FAIL);
         }
-#endif//NDEBUG
-
         vk::InstanceCreateInfo createInfo = { vk::InstanceCreateFlags{}, &appInfo };
-
         createInfo.enabledLayerCount = 0;
-#ifdef NDEBUG
-        auto glfwExts = Utils::Vulkan::QueryGlfwExtension();
-        createInfo.enabledLayerCount = glfwExts.size();
-        createInfo.ppEnabledLayerNames = glfwExts.data();
-#endif//NDEBUG
-        
+        if(gEnableValidationLayer){
+            createInfo.enabledLayerCount = kValidationLayers.size();
+            createInfo.ppEnabledLayerNames = kValidationLayers.data();
+        }
 
         if (auto vkRet = vk::createInstance(&createInfo, nullptr, &instance); vkRet != vk::Result::eSuccess) {
             LOGE("Create Vulkan instance faield return code is {}", static_cast<int>(vkRet));

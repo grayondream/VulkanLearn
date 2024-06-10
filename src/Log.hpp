@@ -26,7 +26,7 @@ namespace sys{
 
         template<typename ...Args>
         void log(const LogLevel level, std::format_string<Args...> fmt, Args&& ...args) {
-            if(_level < level){
+            if(_level > level){
                 return;
             }
 

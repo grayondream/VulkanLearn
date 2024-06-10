@@ -4,8 +4,16 @@
 
 aux_source_directory(. MAIN_SRC_FILES)
 
-message(STATUS "The source file list ${MAIN_SRC_FILES}")
 set(SOURCE_FILES ${MAIN_SRC_FILES})
+
+set(CMAKE_BUILD_TYPE "Debug")
+
+if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+    add_definitions(-DDEBUG)
+else()
+    add_definitions(-DNDEBUG)
+endif()
+
 
 find_package(glfw3 REQUIRED)
 find_package(glm CONFIG REQUIRED)
