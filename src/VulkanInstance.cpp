@@ -4,6 +4,7 @@
 #include "ErrorCode.hpp"
 #include <stdexcept>
 #include <system_error>
+#include <vulkan/vulkan.hpp>
 #ifndef NDEBUG
 
 using namespace Utils;
@@ -65,6 +66,36 @@ inline static bool CheckDeviceSuitable(const vk::PhysicalDevice& device){
     return Utils::Vulkan::QueryQueueFamilyIndices(device) && f.geometryShader? true : false;
 }
 
+void VulkanInstance::createLogicDevice(){
+    float priority = 1.0;
+    auto createQueueInfo = vk::DeviceQueueCreateInfo(
+        vk::DeviceQueueCreateFlags(),
+        _phyDeviceIndex,
+        1,
+        &priority
+    );
+    auto deviceFeat = vk::PhysicalDeviceFeatures();
+    auto createInfo = vk::DeviceCreateInfo(
+        vk::DeviceCreateFlags(),
+        1,
+        &createQueueInfo
+    );
+    createInfo.pEnabledFeatures = &deviceFeat;
+    createInfo.enabledExtensionCount = 0;
+    if(gEnableValidationLayer){
+        createInfo.enabledLayerCount = kValidationLayers.size();
+        createInfo.ppEnabledLayerNames = kValidationLayers.data();
+    }
+    try{
+        _logicDevice = _phyDevice.createDeviceUnique(createInfo);
+    }catch(vk::SystemError &err){
+        LOGE("Failed to create vulkan logic device, message is {}", err.what());
+        throw std::runtime_error(err.what());
+    }
+
+    _graphicsQueue = _logicDevice->getQueue(_phyDeviceIndex, 0);
+}
+
 void VulkanInstance::SelectRunningDevice(){
     auto devices = instance.enumeratePhysicalDevices();
     if(devices.empty()){
@@ -75,6 +106,7 @@ void VulkanInstance::SelectRunningDevice(){
         //LOGI("The {}th device is {}", i, devices[i].)
         if(CheckDeviceSuitable(devices[i])){
             _phyDevice = devices[i];
+            _phyDeviceIndex = i;
             break;//only find one device;
         }
     }
@@ -90,6 +122,10 @@ void VulkanInstance::SelectRunningDevice(){
 void VulkanInstance::destroy(){
     if(gEnableValidationLayer){
         DestroyDebugUtilsMessengerEXT(instance, callback, nullptr);
+    }
+
+    if(_logicDevice){
+        _logicDevice->destroy();
     }
 }
 
@@ -130,6 +166,7 @@ std::error_code VulkanInstance::initialize() {
     }
 
     SelectRunningDevice();
+    createLogicDevice();
     return {};
 }
 
