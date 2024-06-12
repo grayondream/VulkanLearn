@@ -2,9 +2,15 @@
 #include "Utils.hpp"
 #include "Log.hpp"
 #include "ErrorCode.hpp"
+#include <GLFW/glfw3.h>
+#include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <system_error>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
+#include <set>
+
 #ifndef NDEBUG
 
 using namespace Utils;
@@ -17,7 +23,6 @@ static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
 
 using namespace Utils::Vulkan;
-
 
 static std::error_code CheckPrintVKExtensions(){
     auto vkExts = Vulkan::QueryVkExtensions();
@@ -43,42 +48,42 @@ VkBool32 DebugCallback(
     return true;
 }
 
-VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pCallback) {
-    auto pf = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
+VkResult CreateDebugUtilsMessengerEXT(VkInstance _instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pCallback) {
+    auto pf = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(_instance, "vkCreateDebugUtilsMessengerEXT");
     if(!pf){
         LOGE("Failed to load the vkCreateDebugUtilsMessengerEXT");
         return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
 
 
-    return pf(instance, pCreateInfo, pAllocator, pCallback);
+    return pf(_instance, pCreateInfo, pAllocator, pCallback);
 }
 
-void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT callback, const VkAllocationCallbacks* pAllocator) {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
+void DestroyDebugUtilsMessengerEXT(VkInstance _instance, VkDebugUtilsMessengerEXT callback, const VkAllocationCallbacks* pAllocator) {
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(_instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr) {
-        func(instance, callback, pAllocator);
+        func(_instance, callback, pAllocator);
     }
 }
 
-inline static bool CheckDeviceSuitable(const vk::PhysicalDevice& device){
-    auto f = device.getFeatures(); 
-    return Utils::Vulkan::QueryQueueFamilyIndices(device) && f.geometryShader? true : false;
+inline static bool CheckDeviceSuitable(const vk::PhysicalDevice& device, const vk::SurfaceKHR &surface){
+    return Utils::Vulkan::QueryQueueFamilyIndices(device, surface).isComplete();
 }
 
 void VulkanInstance::createLogicDevice(){
     float priority = 1.0;
-    auto createQueueInfo = vk::DeviceQueueCreateInfo(
-        vk::DeviceQueueCreateFlags(),
-        _phyDeviceIndex,
-        1,
-        &priority
-    );
+    auto indics = Utils::Vulkan::QueryQueueFamilyIndices(_phyDevice, _surface);
+    std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos{};
+    std::set<uint32_t> queueFamilies = { indics.graphics.value(), indics.present.value() };
+    for(auto fam : queueFamilies){
+        queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), fam, 1, &priority);
+    }
+
     auto deviceFeat = vk::PhysicalDeviceFeatures();
     auto createInfo = vk::DeviceCreateInfo(
         vk::DeviceCreateFlags(),
-        1,
-        &createQueueInfo
+        queueCreateInfos.size(),
+        queueCreateInfos.data()
     );
     createInfo.pEnabledFeatures = &deviceFeat;
     createInfo.enabledExtensionCount = 0;
@@ -93,18 +98,19 @@ void VulkanInstance::createLogicDevice(){
         throw std::runtime_error(err.what());
     }
 
-    _graphicsQueue = _logicDevice->getQueue(_phyDeviceIndex, 0);
+    _graphicsQueue = _logicDevice->getQueue(indics.graphics.value(), 0);
+    _presentQueue = _logicDevice->getQueue(indics.present.value(), 0);
 }
 
 void VulkanInstance::SelectRunningDevice(){
-    auto devices = instance.enumeratePhysicalDevices();
+    auto devices = _instance.enumeratePhysicalDevices();
     if(devices.empty()){
         throw std::runtime_error("No Physical Device found");
     }
 
     for(auto i = 0;i < devices.size();i ++){
         //LOGI("The {}th device is {}", i, devices[i].)
-        if(CheckDeviceSuitable(devices[i])){
+        if(CheckDeviceSuitable(devices[i], _surface)){
             _phyDevice = devices[i];
             _phyDeviceIndex = i;
             break;//only find one device;
@@ -121,15 +127,17 @@ void VulkanInstance::SelectRunningDevice(){
 
 void VulkanInstance::destroy(){
     if(gEnableValidationLayer){
-        DestroyDebugUtilsMessengerEXT(instance, callback, nullptr);
+        DestroyDebugUtilsMessengerEXT(_instance, callback, nullptr);
     }
 
     if(_logicDevice){
         _logicDevice->destroy();
     }
+
+    _instance.destroySurfaceKHR(_surface);
 }
 
-std::error_code VulkanInstance::initialize() {
+std::error_code VulkanInstance::initialize(GLFWwindow *window) {
     if(auto ret = CheckPrintVKExtensions(); ret){
         LOGE("Failed to load the vulkan extensions");
         throw std::runtime_error("Can not find any vulkan extensions");
@@ -160,16 +168,25 @@ std::error_code VulkanInstance::initialize() {
         LOGI("Enable extension {}", name);
     }
 
-    if (auto vkRet = vk::createInstance(&createInfo, nullptr, &instance); vkRet != vk::Result::eSuccess) {
-        LOGE("Create Vulkan instance faield return code is {}", static_cast<int>(vkRet));
-        std::runtime_error("Failed to create vulkan instance");
+    if (auto vkRet = vk::createInstance(&createInfo, nullptr, &_instance); vkRet != vk::Result::eSuccess) {
+        LOGE("Create Vulkan _instance faield return code is {}", static_cast<int>(vkRet));
+        std::runtime_error("Failed to create vulkan _instance");
     }
 
+    createSurface(window);
     SelectRunningDevice();
     createLogicDevice();
     return {};
 }
 
+void VulkanInstance::createSurface(GLFWwindow *window){
+    VkSurfaceKHR surface{};
+    if(VK_SUCCESS != glfwCreateWindowSurface(_instance, window, nullptr, &surface)){
+        throw std::runtime_error("Failed to create window surface");
+    }
+
+    _surface = surface;
+}
 
 void VulkanInstance::setupDebugCallback(){
     if(!gEnableValidationLayer) {
@@ -183,7 +200,7 @@ void VulkanInstance::setupDebugCallback(){
         DebugCallback,
         nullptr
     };
-    if(CreateDebugUtilsMessengerEXT(instance, reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(&createInfo), nullptr, &callback)){
+    if(CreateDebugUtilsMessengerEXT(_instance, reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(&createInfo), nullptr, &callback)){
         throw std::runtime_error("Failed to register debug utils");
     }
 }

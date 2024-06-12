@@ -69,16 +69,25 @@ bool CheckValidationLayerSupport(const std::vector<const char*> &layers) {
 	return false;
 }
 
-std::optional<int32_t> QueryQueueFamilyIndices(const vk::PhysicalDevice &dev){
+VKQueueFamilyIndices QueryQueueFamilyIndices(const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface){
+	VKQueueFamilyIndices indices{};
 	auto qfPro = dev.getQueueFamilyProperties();
 	for(auto i = 0;i < qfPro.size();i ++){
 		auto q = qfPro[i];
 		if(q.queueCount > 0 && q.queueFlags & vk::QueueFlagBits::eGraphics){
-			return i;
+			indices.graphics = i;
+		}
+
+		if(q.queueCount > 0 && dev.getSurfaceSupportKHR(i, surface)){
+			indices.present = i;
+		}
+
+		if(indices.isComplete()){
+			break;
 		}
 	}
 
-	return {};
+	return indices;
 }
 }
 }

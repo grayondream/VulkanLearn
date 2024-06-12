@@ -43,7 +43,7 @@ std::error_code Application::init() {
     }
 
     instance = std::make_shared<VulkanInstance>();
-    if (auto ret = instance->initialize(); ret) {
+    if (auto ret = instance->initialize(pwin); ret) {
         LOGE("inintialize the vulkan instance failed");
         return ret;
     }
