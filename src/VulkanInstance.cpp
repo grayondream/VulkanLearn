@@ -4,6 +4,7 @@
 #include "ErrorCode.hpp"
 #include <GLFW/glfw3.h>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <system_error>
@@ -23,7 +24,6 @@ static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
 
 using namespace Utils::Vulkan;
-
 static std::error_code CheckPrintVKExtensions(){
     auto vkExts = Vulkan::QueryVkExtensions();
     if (vkExts.empty()) {
@@ -44,7 +44,10 @@ VkBool32 DebugCallback(
     VkDebugUtilsMessageTypeFlagsEXT                  messageTypes,
     const VkDebugUtilsMessengerCallbackDataEXT*      pCallbackData,
     void*                                            pUserData){
-    LOGD("Debug Callback has been called");
+    static std::once_flag oflag;
+    std::call_once(oflag, [](){
+        LOGD("Debug Callback has been called");
+    });
     return true;
 }
 
