@@ -126,19 +126,28 @@ void VulkanInstance::SelectRunningDevice(){
 }
 
 void VulkanInstance::destroy(){
+    if(!_instance) return;
+    if(_logicDevice){
+        _logicDevice->waitIdle();
+        _logicDevice.reset();
+    }
+
+    if(_surface){
+        _instance.destroySurfaceKHR(_surface);
+        _surface = nullptr;
+    }
+
+    _phyDevice = nullptr;
     if(gEnableValidationLayer){
         DestroyDebugUtilsMessengerEXT(_instance, callback, nullptr);
+        callback = nullptr;
     }
 
-    if(_logicDevice){
-        _logicDevice->destroy();
-    }
-
-    _instance.destroySurfaceKHR(_surface);
+    _instance = nullptr;
 }
 
-std::error_code VulkanInstance::initialize(GLFWwindow *window) {
-    if(auto ret = CheckPrintVKExtensions(); ret){
+void VulkanInstance::createInstance(){
+        if(auto ret = CheckPrintVKExtensions(); ret){
         LOGE("Failed to load the vulkan extensions");
         throw std::runtime_error("Can not find any vulkan extensions");
     }
@@ -172,7 +181,11 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window) {
         LOGE("Create Vulkan _instance faield return code is {}", static_cast<int>(vkRet));
         std::runtime_error("Failed to create vulkan _instance");
     }
+}
 
+std::error_code VulkanInstance::initialize(GLFWwindow *window) {
+    createInstance();
+    setupDebugCallback();
     createSurface(window);
     SelectRunningDevice();
     createLogicDevice();

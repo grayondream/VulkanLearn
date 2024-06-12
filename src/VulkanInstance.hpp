@@ -15,6 +15,7 @@ public:
     std::error_code initialize(GLFWwindow *window);
 
 private:
+    void createInstance();
 	void setupDebugCallback();
     void SelectRunningDevice();
     void createLogicDevice();

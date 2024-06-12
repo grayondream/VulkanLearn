@@ -61,6 +61,8 @@ std::error_code Application::run() {
 }
 
 std::error_code Application::destroy() {
+    instance->destroy();
+    instance = nullptr;
     glfwDestroyWindow(pwin);
     glfwTerminate();
     return {};
