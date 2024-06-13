@@ -229,30 +229,6 @@ void VulkanInstance::SelectRunningDevice(){
     LOGI("Select Device Id {} Device name {}", phyDevicePro.deviceID, std::string(phyDevicePro.deviceName));
 }
 
-void VulkanInstance::destroy(){
-    if(!_instance) return;
-    if(_logicDevice){
-        _logicDevice->waitIdle();
-        _logicDevice.reset();
-    }
-
-    if(_swapChain && _logicDevice){
-        _logicDevice->destroySwapchainKHR(_swapChain);
-    }
-    if(_surface){
-        _instance.destroySurfaceKHR(_surface);
-        _surface = nullptr;
-    }
-
-    _phyDevice = nullptr;
-    if(gEnableValidationLayer){
-        DestroyDebugUtilsMessengerEXT(_instance, callback, nullptr);
-        callback = nullptr;
-    }
-
-    _instance = nullptr;
-}
-
 void VulkanInstance::createInstance(){
         if(auto ret = CheckPrintVKExtensions(); ret){
         LOGE("Failed to load the vulkan extensions");
@@ -290,16 +266,6 @@ void VulkanInstance::createInstance(){
     }
 }
 
-std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
-    createInstance();
-    setupDebugCallback();
-    createSurface(window);
-    SelectRunningDevice();
-    createLogicDevice();
-    createSwapChain();
-    return {};
-}
-
 void VulkanInstance::createSurface(GLFWwindow *window){
     VkSurfaceKHR surface{};
     if(VK_SUCCESS != glfwCreateWindowSurface(_instance, window, nullptr, &surface)){
@@ -324,4 +290,70 @@ void VulkanInstance::setupDebugCallback(){
     if(CreateDebugUtilsMessengerEXT(_instance, reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(&createInfo), nullptr, &callback)){
         throw std::runtime_error("Failed to register debug utils");
     }
+}
+
+
+void VulkanInstance::createImageViews(){
+    _swapChainImageViews.resize(_swapImages.size());
+    for (size_t i = 0; i < _swapImages.size(); i++) {
+        vk::ImageViewCreateInfo createInfo = {};
+        createInfo.image = _swapImages[i];
+        createInfo.viewType = vk::ImageViewType::e2D;
+        createInfo.format = _swapForamt;
+        createInfo.components.r = vk::ComponentSwizzle::eIdentity;
+        createInfo.components.g = vk::ComponentSwizzle::eIdentity;
+        createInfo.components.b = vk::ComponentSwizzle::eIdentity;
+        createInfo.components.a = vk::ComponentSwizzle::eIdentity;
+        createInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        createInfo.subresourceRange.baseMipLevel = 0;
+        createInfo.subresourceRange.levelCount = 1;
+        createInfo.subresourceRange.baseArrayLayer = 0;
+        createInfo.subresourceRange.layerCount = 1;
+
+        try {
+            _swapChainImageViews[i] = _logicDevice->createImageView(createInfo);
+        }
+        catch (vk::SystemError err) {
+            throw std::runtime_error("failed to create image views!");
+        }
+    }
+}
+
+std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
+    createInstance();
+    setupDebugCallback();
+    createSurface(window);
+    SelectRunningDevice();
+    createLogicDevice();
+    createSwapChain();
+    createImageViews();
+    return {};
+}
+
+void VulkanInstance::destroy(){
+    if(!_instance) return;
+    for(auto && view : _swapChainImageViews){
+        _logicDevice->destroyImageView(view);
+    }
+
+    if(_logicDevice){
+        _logicDevice->waitIdle();
+        _logicDevice.reset();
+    }
+
+    if(_swapChain && _logicDevice){
+        _logicDevice->destroySwapchainKHR(_swapChain);
+    }
+    if(_surface){
+        _instance.destroySurfaceKHR(_surface);
+        _surface = nullptr;
+    }
+
+    _phyDevice = nullptr;
+    if(gEnableValidationLayer){
+        DestroyDebugUtilsMessengerEXT(_instance, callback, nullptr);
+        callback = nullptr;
+    }
+
+    _instance = nullptr;
 }

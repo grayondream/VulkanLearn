@@ -21,7 +21,8 @@ private:
     void createLogicDevice();
     void createSurface(GLFWwindow *window);
     void createSwapChain();
-
+    void createImageViews();
+    
 private:
     vk::Instance _instance{};
     vk::PhysicalDevice _phyDevice{};
@@ -34,6 +35,7 @@ private:
     VkDebugUtilsMessengerEXT callback;
     vk::SwapchainKHR _swapChain{};
     std::vector<vk::Image> _swapImages{};
+    std::vector<vk::ImageView> _swapChainImageViews;
     vk::Format _swapForamt{};
     vk::Extent2D _swapExtent{};
     uint32_t _width{};
