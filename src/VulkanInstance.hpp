@@ -12,7 +12,7 @@ public:
     
 public:
     void destroy();
-    std::error_code initialize(GLFWwindow *window);
+    std::error_code initialize(GLFWwindow *window, const uint32_t width = 0, const uint32_t height = 0);
 
 private:
     void createInstance();
@@ -20,6 +20,7 @@ private:
     void SelectRunningDevice();
     void createLogicDevice();
     void createSurface(GLFWwindow *window);
+    void createSwapChain();
 
 private:
     vk::Instance _instance{};
@@ -31,4 +32,10 @@ private:
     vk::Queue _presentQueue{};
     GLFWwindow* _pwindows{};
     VkDebugUtilsMessengerEXT callback;
+    vk::SwapchainKHR _swapChain{};
+    std::vector<vk::Image> _swapImages{};
+    vk::Format _swapForamt{};
+    vk::Extent2D _swapExtent{};
+    uint32_t _width{};
+    uint32_t _height{};
 };

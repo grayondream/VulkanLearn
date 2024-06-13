@@ -9,6 +9,8 @@
 #include <optional>
 #include <utility>
 #include <vulkan/vulkan_core.h>
+#include <string>
+#include <set>
 
 namespace Utils {
 namespace Vulkan {
@@ -88,6 +90,23 @@ VKQueueFamilyIndices QueryQueueFamilyIndices(const vk::PhysicalDevice &dev, cons
 	}
 
 	return indices;
+}
+
+bool CheckDeviceExtensionSupport(const vk::PhysicalDevice &device, std::vector<const char*> deviceExtenions){
+	std::set<std::string> exts(deviceExtenions.begin(), deviceExtenions.end());
+	for(auto && e : device.enumerateDeviceExtensionProperties()){
+		exts.erase(e.extensionName);
+	}
+
+	return exts.empty();
+}
+
+VKSwapChainSupportStatus QuerySwapChainStatus(const vk::PhysicalDevice &device, const vk::SurfaceKHR &surface){
+	VKSwapChainSupportStatus status{};
+	status.capas = device.getSurfaceCapabilitiesKHR(surface);
+	status.formats = device.getSurfaceFormatsKHR(surface);
+	status.modes = device.getSurfacePresentModesKHR(surface);
+	return status;
 }
 }
 }

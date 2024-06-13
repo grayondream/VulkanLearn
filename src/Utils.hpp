@@ -16,6 +16,12 @@ namespace Utils {
 			}
 		};
 
+		struct VKSwapChainSupportStatus{
+			vk::SurfaceCapabilitiesKHR capas{};
+			std::vector<vk::SurfaceFormatKHR> formats{};
+			std::vector<vk::PresentModeKHR> modes{};
+		};
+
 		std::vector<const char*> QueryGlfwExtension();
 
 		std::vector<VkExtensionProperties> QueryVkExtensions();
@@ -25,5 +31,9 @@ namespace Utils {
 		bool CheckValidationLayerSupport(const std::vector<const char*> &layers);
 
 		VKQueueFamilyIndices QueryQueueFamilyIndices(const vk::PhysicalDevice &dev, const vk::SurfaceKHR &surface);
+
+		bool CheckDeviceExtensionSupport(const vk::PhysicalDevice &device, std::vector<const char*> deviceExtenions);
+		 
+		VKSwapChainSupportStatus QuerySwapChainStatus(const vk::PhysicalDevice &device, const vk::SurfaceKHR &surface);
 	}
 }

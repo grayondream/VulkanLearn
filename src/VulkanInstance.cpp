@@ -4,6 +4,7 @@
 #include "ErrorCode.hpp"
 #include <GLFW/glfw3.h>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -15,6 +16,8 @@
 #ifndef NDEBUG
 
 using namespace Utils;
+using namespace Utils::Vulkan;
+
 static constexpr const bool gEnableValidationLayer = true;
 const std::vector<const char*> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -23,7 +26,10 @@ const std::vector<const char*> kValidationLayers = {
 static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
 
-using namespace Utils::Vulkan;
+static const std::vector<const char*> kDeviceExtensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
 static std::error_code CheckPrintVKExtensions(){
     auto vkExts = Vulkan::QueryVkExtensions();
     if (vkExts.empty()) {
@@ -70,7 +76,53 @@ void DestroyDebugUtilsMessengerEXT(VkInstance _instance, VkDebugUtilsMessengerEX
 }
 
 inline static bool CheckDeviceSuitable(const vk::PhysicalDevice& device, const vk::SurfaceKHR &surface){
-    return Utils::Vulkan::QueryQueueFamilyIndices(device, surface).isComplete();
+    const auto indices = Utils::Vulkan::QueryQueueFamilyIndices(device, surface).isComplete();
+    bool extSupported = Vulkan::CheckDeviceExtensionSupport(device, kDeviceExtensions);
+    bool swapChainAdequate{false};
+    if(extSupported){
+        VKSwapChainSupportStatus status = Utils::Vulkan::QuerySwapChainStatus(device, surface);
+        swapChainAdequate = !status.formats.empty() && !status.modes.empty();
+    }
+
+    return indices && extSupported && swapChainAdequate;
+}
+
+inline static vk::Extent2D ChooseSwapExtend(const vk::SurfaceCapabilitiesKHR &capas, const uint32_t width, const uint32_t height){
+    if(capas.currentExtent.width != std::numeric_limits<uint32_t>::max()){
+        return capas.currentExtent;
+    }else{
+        vk::Extent2D extent = { width, height};
+        extent.width = std::max(capas.minImageExtent.width, std::min(capas.maxImageExtent.width, extent.width));
+        extent.height = std::max(capas.minImageExtent.height, std::min(capas.maxImageExtent.height, extent.height));
+        return extent;
+    }
+}
+
+vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR> availablePresentModes) {
+    vk::PresentModeKHR bestMode = vk::PresentModeKHR::eFifo;
+    for (const auto& availablePresentMode : availablePresentModes) {
+        if (availablePresentMode == vk::PresentModeKHR::eMailbox) {
+            return availablePresentMode;
+        }else if (availablePresentMode == vk::PresentModeKHR::eImmediate) {
+            bestMode = availablePresentMode;
+        }
+    }
+
+    return bestMode;
+}
+
+vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
+    if (availableFormats.size() == 1 && availableFormats[0].format == vk::Format::eUndefined) {
+        return { vk::Format::eB8G8R8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear };
+    }
+
+    for (const auto& availableFormat : availableFormats) {
+        if (availableFormat.format == vk::Format::eB8G8R8A8Unorm && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+            return availableFormat;
+        }
+    }
+
+    return availableFormats[0];
 }
 
 void VulkanInstance::createLogicDevice(){
@@ -89,7 +141,8 @@ void VulkanInstance::createLogicDevice(){
         queueCreateInfos.data()
     );
     createInfo.pEnabledFeatures = &deviceFeat;
-    createInfo.enabledExtensionCount = 0;
+    createInfo.enabledExtensionCount = kDeviceExtensions.size();
+    createInfo.ppEnabledExtensionNames = kDeviceExtensions.data();
     if(gEnableValidationLayer){
         createInfo.enabledLayerCount = kValidationLayers.size();
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
@@ -103,6 +156,54 @@ void VulkanInstance::createLogicDevice(){
 
     _graphicsQueue = _logicDevice->getQueue(indics.graphics.value(), 0);
     _presentQueue = _logicDevice->getQueue(indics.present.value(), 0);
+}
+
+void VulkanInstance::createSwapChain(){
+    VKSwapChainSupportStatus status = Utils::Vulkan::QuerySwapChainStatus(_phyDevice, _surface);
+    auto format = ChooseSwapSurfaceFormat(status.formats);
+    auto mode = ChooseSwapPresentMode(status.modes);
+    auto extent = ChooseSwapExtend(status.capas, _width, _height);
+    uint32_t imgCount = status.capas.minImageCount + 1;
+    if(status.capas.maxImageCount > 0 && imgCount > status.capas.maxImageCount){
+        imgCount = status.capas.maxImageCount;
+    }
+
+    vk::SwapchainCreateInfoKHR createInfo{
+        vk::SwapchainCreateFlagsKHR(),
+        _surface,
+        imgCount,
+        format.format,
+        format.colorSpace,
+        extent,
+        1,
+        vk::ImageUsageFlagBits::eColorAttachment
+    };
+
+    auto indics = QueryQueueFamilyIndices(_phyDevice, _surface);
+    uint32_t famIndics[] = { indics.graphics.value(), indics.present.value()};
+    if(indics.graphics != indics.present){
+        createInfo.imageSharingMode = vk::SharingMode::eConcurrent;
+        createInfo.queueFamilyIndexCount = 2;
+        createInfo.pQueueFamilyIndices = famIndics;
+    }else{
+        createInfo.imageSharingMode = vk::SharingMode::eExclusive;
+    }
+    createInfo.preTransform = status.capas.currentTransform;
+    createInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+    createInfo.presentMode = mode;
+    createInfo.clipped = VK_TRUE;
+
+    createInfo.oldSwapchain = vk::SwapchainKHR(nullptr);
+    try {
+        _swapChain = _logicDevice->createSwapchainKHR(createInfo);
+    }
+    catch (vk::SystemError err) {
+        throw std::runtime_error("failed to create swap chain!");
+    }
+
+    _swapImages = _logicDevice->getSwapchainImagesKHR(_swapChain);
+    _swapForamt = format.format;
+    _swapExtent = extent;
 }
 
 void VulkanInstance::SelectRunningDevice(){
@@ -135,6 +236,9 @@ void VulkanInstance::destroy(){
         _logicDevice.reset();
     }
 
+    if(_swapChain && _logicDevice){
+        _logicDevice->destroySwapchainKHR(_swapChain);
+    }
     if(_surface){
         _instance.destroySurfaceKHR(_surface);
         _surface = nullptr;
@@ -186,12 +290,13 @@ void VulkanInstance::createInstance(){
     }
 }
 
-std::error_code VulkanInstance::initialize(GLFWwindow *window) {
+std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
     createInstance();
     setupDebugCallback();
     createSurface(window);
     SelectRunningDevice();
     createLogicDevice();
+    createSwapChain();
     return {};
 }
 
