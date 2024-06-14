@@ -36,4 +36,10 @@ namespace Utils {
 		 
 		VKSwapChainSupportStatus QuerySwapChainStatus(const vk::PhysicalDevice &device, const vk::SurfaceKHR &surface);
 	}
+
+	namespace FileSystem{
+		std::vector<char> ReadFile(const std::string &file);
+
+		std::string PathJoin(const std::string &path, const std::string file);
+	}
 }

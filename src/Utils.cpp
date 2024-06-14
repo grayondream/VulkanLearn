@@ -7,10 +7,13 @@
 #include <format>
 #include <algorithm>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vulkan/vulkan_core.h>
 #include <string>
 #include <set>
+#include <filesystem>
+#include <fstream>
 
 namespace Utils {
 namespace Vulkan {
@@ -108,5 +111,27 @@ VKSwapChainSupportStatus QuerySwapChainStatus(const vk::PhysicalDevice &device, 
 	status.modes = device.getSurfacePresentModesKHR(surface);
 	return status;
 }
+}
+
+namespace FileSystem{
+std::vector<char> ReadFile(const std::string &filename){
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file: " + filename);
+    }
+
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    std::vector<char> buffer(fileSize);
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+    file.close();
+
+    return buffer;
+}
+
+std::string PathJoin(const std::string &path, const std::string file){
+	return std::filesystem::path(path) / std::filesystem::path(file);
+}
+
 }
 }

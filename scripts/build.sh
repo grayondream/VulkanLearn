@@ -5,3 +5,7 @@ cd ${build_dir}
 make -j32
 cd -
 
+shaderRoot=${root_dir}/shader
+
+glslangValidator -V ${shaderRoot}/shader.frag -o ${shaderRoot}/frag.spv
+glslangValidator -V ${shaderRoot}/shader.vert -o ${shaderRoot}/vert.spv

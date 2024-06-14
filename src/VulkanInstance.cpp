@@ -26,6 +26,8 @@ const std::vector<const char*> kValidationLayers = {
 static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
 
+static constexpr const char* kShaderPath = "/home/ares/home/Code/VulkanLearn/shader";
+
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -319,6 +321,41 @@ void VulkanInstance::createImageViews(){
     }
 }
 
+static vk::UniqueShaderModule CreateShaderModule(const vk::UniqueDevice &device, const std::vector<char> &code){
+    try{
+        return device->createShaderModuleUnique(
+            {
+                vk::ShaderModuleCreateFlags(),
+                code.size(),
+                (uint32_t*)code.data(),
+            }
+        );
+    }catch(vk::SystemError &err){
+        throw std::runtime_error("Failed to crate shader module!");
+    }
+}
+
+void VulkanInstance::createGraphicsPipeline(){
+    auto vertShaderStr = Utils::FileSystem::ReadFile(FileSystem::PathJoin(kShaderPath, "vert.spv"));
+    auto fragShaderStr = Utils::FileSystem::ReadFile(FileSystem::PathJoin(kShaderPath, "frag.spv"));
+    LOGD("Vertex Shader:{}", vertShaderStr.size());
+    LOGD("Fragment Shader:{}", fragShaderStr.size());
+    vk::PipelineShaderStageCreateInfo renderStage[] = {
+        {
+            vk::PipelineShaderStageCreateFlags(),
+            vk::ShaderStageFlagBits::eVertex,
+            *CreateShaderModule(_logicDevice, vertShaderStr),
+            "main"
+        },
+        {
+            vk::PipelineShaderStageCreateFlags(),
+            vk::ShaderStageFlagBits::eFragment,
+            *CreateShaderModule(_logicDevice, fragShaderStr),
+            "main"
+        }
+    };
+}
+
 std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
     createInstance();
     setupDebugCallback();
@@ -327,6 +364,7 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     createLogicDevice();
     createSwapChain();
     createImageViews();
+    createGraphicsPipeline();
     return {};
 }
 

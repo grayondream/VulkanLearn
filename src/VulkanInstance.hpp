@@ -22,7 +22,8 @@ private:
     void createSurface(GLFWwindow *window);
     void createSwapChain();
     void createImageViews();
-    
+    void createGraphicsPipeline();
+
 private:
     vk::Instance _instance{};
     vk::PhysicalDevice _phyDevice{};
