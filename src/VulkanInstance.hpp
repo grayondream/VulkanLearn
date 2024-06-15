@@ -13,7 +13,9 @@ public:
 public:
     void destroy();
     std::error_code initialize(GLFWwindow *window, const uint32_t width = 0, const uint32_t height = 0);
-
+    void draw();
+    void wait();
+    
 private:
     void createInstance();
 	void setupDebugCallback();
@@ -27,7 +29,8 @@ private:
     void createFrameBuffers();
     void createCommandBuffer();
     void createCommandPool();
-    
+    void createSyncObject();
+
 private:
     vk::Instance _instance{};
     vk::PhysicalDevice _phyDevice{};
@@ -51,4 +54,8 @@ private:
     std::vector<vk::CommandBuffer, std::allocator<vk::CommandBuffer>> _cmdBuffers{};
     uint32_t _width{};
     uint32_t _height{};
+    std::vector<vk::Semaphore> _imageAvailableSemaphores;
+    std::vector<vk::Semaphore> _renderFinishedSemaphores;
+    std::vector<vk::Fence> _inFlightFences;
+    size_t _currentFrame = 0;
 };

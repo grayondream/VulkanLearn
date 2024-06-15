@@ -55,6 +55,7 @@ std::error_code Application::run() {
     while (!glfwWindowShouldClose(pwin)) {
         glfwPollEvents();
         glfwSwapBuffers(pwin);
+        instance->draw();
     }
 
     return {};
