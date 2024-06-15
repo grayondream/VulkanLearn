@@ -42,6 +42,7 @@ private:
     vk::Extent2D _swapExtent{};
     vk::RenderPass _renderPass{};
     vk::PipelineLayout _renderLayout{};
+    vk::Pipeline _renderPipeline{};
     uint32_t _width{};
     uint32_t _height{};
 };

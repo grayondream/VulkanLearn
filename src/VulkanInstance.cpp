@@ -417,7 +417,28 @@ void VulkanInstance::createGraphicsPipeline(){
     } catch (vk::SystemError err) {
         throw std::runtime_error("failed to create pipeline layout!");
     }
-}
+
+    vk::GraphicsPipelineCreateInfo pipelineInfo = {};
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = renderStage;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.layout = _renderLayout;
+        pipelineInfo.renderPass = _renderPass;
+        pipelineInfo.subpass = 0;
+        pipelineInfo.basePipelineHandle = nullptr;
+
+        try {
+            _renderPipeline = _logicDevice->createGraphicsPipeline(nullptr, pipelineInfo).value;
+        }
+        catch (vk::SystemError err) {
+            throw std::runtime_error("failed to create graphics pipeline!");
+        }
+})
 
 void VulkanInstance::createRenderPass(){
     vk::AttachmentDescription colorAttachment = {};
@@ -445,10 +466,21 @@ void VulkanInstance::createRenderPass(){
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
 
+    vk::SubpassDependency dependency = {};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = {};
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+
     try {
         _renderPass = _logicDevice->createRenderPass(renderPassInfo);
     } catch (vk::SystemError err) {
-        throw std::runtime_error("failed to create render pass!");
+        throw std::runtime_error(std::format("failed to create render pass!{}", err.what()));
     }
 }
 
@@ -460,13 +492,16 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     createLogicDevice();
     createSwapChain();
     createImageViews();
-    createGraphicsPipeline();
     createRenderPass();
+    createGraphicsPipeline();
     return {};
 }
 
 void VulkanInstance::destroy(){
     if(!_instance) return;
+    _logicDevice->destroyPipeline(_renderPipeline);
+    _logicDevice->destroyPipelineLayout(_renderLayout);
+    _logicDevice->destroyRenderPass(_renderPass);
     for(auto && view : _swapChainImageViews){
         _logicDevice->destroyImageView(view);
     }
