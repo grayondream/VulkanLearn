@@ -419,26 +419,51 @@ void VulkanInstance::createGraphicsPipeline(){
     }
 
     vk::GraphicsPipelineCreateInfo pipelineInfo = {};
-        pipelineInfo.stageCount = 2;
-        pipelineInfo.pStages = renderStage;
-        pipelineInfo.pVertexInputState = &vertexInputInfo;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState = &viewportState;
-        pipelineInfo.pRasterizationState = &rasterizer;
-        pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pColorBlendState = &colorBlending;
-        pipelineInfo.layout = _renderLayout;
-        pipelineInfo.renderPass = _renderPass;
-        pipelineInfo.subpass = 0;
-        pipelineInfo.basePipelineHandle = nullptr;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = renderStage;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.layout = _renderLayout;
+    pipelineInfo.renderPass = _renderPass;
+    pipelineInfo.subpass = 0;
+    pipelineInfo.basePipelineHandle = nullptr;
+
+    try {
+        _renderPipeline = _logicDevice->createGraphicsPipeline(nullptr, pipelineInfo).value;
+    }
+    catch (vk::SystemError err) {
+        throw std::runtime_error("failed to create graphics pipeline!");
+    }
+}
+
+void VulkanInstance::createFrameBuffers(){
+    _framebuffers.resize(_swapChainImageViews.size());
+
+    for (size_t i = 0; i < _swapChainImageViews.size(); i++) {
+        vk::ImageView attachments[] = {
+            _swapChainImageViews[i]
+        };
+
+        vk::FramebufferCreateInfo framebufferInfo = {};
+        framebufferInfo.renderPass = _renderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = _swapExtent.width;
+        framebufferInfo.height = _swapExtent.height;
+        framebufferInfo.layers = 1;
 
         try {
-            _renderPipeline = _logicDevice->createGraphicsPipeline(nullptr, pipelineInfo).value;
+            _framebuffers[i] = _logicDevice->createFramebuffer(framebufferInfo);
+        } catch (vk::SystemError err) {
+            throw std::runtime_error("failed to create framebuffer!");
         }
-        catch (vk::SystemError err) {
-            throw std::runtime_error("failed to create graphics pipeline!");
-        }
-})
+    }
+}
+
 
 void VulkanInstance::createRenderPass(){
     vk::AttachmentDescription colorAttachment = {};
@@ -493,12 +518,17 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     createSwapChain();
     createImageViews();
     createRenderPass();
+    createFrameBuffers();
     createGraphicsPipeline();
     return {};
 }
 
 void VulkanInstance::destroy(){
     if(!_instance) return;
+    for (auto framebuffer : _framebuffers) {
+        _logicDevice->destroyFramebuffer(framebuffer);
+    }
+
     _logicDevice->destroyPipeline(_renderPipeline);
     _logicDevice->destroyPipelineLayout(_renderLayout);
     _logicDevice->destroyRenderPass(_renderPass);

@@ -24,7 +24,8 @@ private:
     void createImageViews();
     void createGraphicsPipeline();
     void createRenderPass();
-
+    void createFrameBuffers();
+    
 private:
     vk::Instance _instance{};
     vk::PhysicalDevice _phyDevice{};
@@ -43,6 +44,7 @@ private:
     vk::RenderPass _renderPass{};
     vk::PipelineLayout _renderLayout{};
     vk::Pipeline _renderPipeline{};
+    std::vector<vk::Framebuffer> _framebuffers;
     uint32_t _width{};
     uint32_t _height{};
 };
