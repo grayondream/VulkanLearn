@@ -23,6 +23,7 @@ private:
     void createSwapChain();
     void createImageViews();
     void createGraphicsPipeline();
+    void createRenderPass();
 
 private:
     vk::Instance _instance{};
@@ -39,6 +40,8 @@ private:
     std::vector<vk::ImageView> _swapChainImageViews;
     vk::Format _swapForamt{};
     vk::Extent2D _swapExtent{};
+    vk::RenderPass _renderPass{};
+    vk::PipelineLayout _renderLayout{};
     uint32_t _width{};
     uint32_t _height{};
 };
