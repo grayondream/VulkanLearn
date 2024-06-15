@@ -509,6 +509,66 @@ void VulkanInstance::createRenderPass(){
     }
 }
 
+void VulkanInstance::createCommandPool(){
+    auto queueFamilyIndices = Vulkan::QueryQueueFamilyIndices(_phyDevice, _surface);
+    vk::CommandPoolCreateInfo poolInfo = {};
+    poolInfo.queueFamilyIndex = queueFamilyIndices.graphics.value();
+
+    try {
+        _cmdPool = _logicDevice->createCommandPool(poolInfo);
+    }
+    catch (vk::SystemError err) {
+        throw std::runtime_error("failed to create command pool!");
+    }
+}
+
+void VulkanInstance::createCommandBuffer(){
+    _cmdBuffers.resize(_framebuffers.size());
+
+    vk::CommandBufferAllocateInfo allocInfo = {};
+    allocInfo.commandPool = _cmdPool;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandBufferCount = (uint32_t)_cmdBuffers.size();
+
+    try {
+        _cmdBuffers = _logicDevice->allocateCommandBuffers(allocInfo);
+    } catch (vk::SystemError err) {
+        throw std::runtime_error("failed to allocate command buffers!");
+    }
+
+    for (size_t i = 0; i < _cmdBuffers.size(); i++) {
+        vk::CommandBufferBeginInfo beginInfo = {};
+        beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
+
+        try {
+            _cmdBuffers[i].begin(beginInfo);
+        }
+        catch (vk::SystemError err) {
+            throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        vk::RenderPassBeginInfo renderPassInfo = {};
+        renderPassInfo.renderPass = _renderPass;
+        renderPassInfo.framebuffer = _framebuffers[i];
+        renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
+        renderPassInfo.renderArea.extent = _swapExtent;
+
+        vk::ClearValue clearColor = { std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f } };
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        _cmdBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+        _cmdBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
+        _cmdBuffers[i].draw(3, 1, 0, 0);
+        _cmdBuffers[i].endRenderPass();
+        try {
+            _cmdBuffers[i].end();
+        } catch (vk::SystemError err) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
+    }
+}
+
 std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
     createInstance();
     setupDebugCallback();
@@ -520,11 +580,14 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     createRenderPass();
     createFrameBuffers();
     createGraphicsPipeline();
+    createCommandPool();
+    createCommandBuffer();
     return {};
 }
 
 void VulkanInstance::destroy(){
     if(!_instance) return;
+    _logicDevice->destroyCommandPool(_cmdPool);
     for (auto framebuffer : _framebuffers) {
         _logicDevice->destroyFramebuffer(framebuffer);
     }

@@ -25,6 +25,8 @@ private:
     void createGraphicsPipeline();
     void createRenderPass();
     void createFrameBuffers();
+    void createCommandBuffer();
+    void createCommandPool();
     
 private:
     vk::Instance _instance{};
@@ -45,6 +47,8 @@ private:
     vk::PipelineLayout _renderLayout{};
     vk::Pipeline _renderPipeline{};
     std::vector<vk::Framebuffer> _framebuffers;
+    vk::CommandPool _cmdPool{};
+    std::vector<vk::CommandBuffer, std::allocator<vk::CommandBuffer>> _cmdBuffers{};
     uint32_t _width{};
     uint32_t _height{};
 };
