@@ -683,7 +683,7 @@ void VulkanInstance::draw(){
     presentInfo.pImageIndices = &imageIndex;
     presentInfo.pResults = nullptr; // Optional
 
-    _presentQueue.presentKHR(presentInfo);
+    r = _presentQueue.presentKHR(presentInfo);
 
     _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
