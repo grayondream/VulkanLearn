@@ -21,7 +21,7 @@ std::vector<const char*> QueryGlfwExtension() {
 	uint32_t cnt{};
 	const char** exts = glfwGetRequiredInstanceExtensions(&cnt);
 	std::vector<const char*> extVec{ exts, exts + cnt };
-#ifdef NDEBUG
+#ifndef NDEBUG
 	extVec.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 #endif//NDEBUG
 	return extVec;

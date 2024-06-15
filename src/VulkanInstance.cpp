@@ -13,16 +13,15 @@
 #include <vulkan/vulkan_core.h>
 #include <set>
 
-#ifndef NDEBUG
-
 using namespace Utils;
 using namespace Utils::Vulkan;
 
 static constexpr const int MAX_FRAMES_IN_FLIGHT = 2;
-static constexpr const bool gEnableValidationLayer = true;
 const std::vector<const char*> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
+#ifndef NDEBUG
+static constexpr const bool gEnableValidationLayer = false;
 #else
 static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
@@ -134,7 +133,11 @@ void VulkanInstance::createLogicDevice(){
     std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos{};
     std::set<uint32_t> queueFamilies = { indics.graphics.value(), indics.present.value() };
     for(auto fam : queueFamilies){
-        queueCreateInfos.emplace_back(vk::DeviceQueueCreateFlags(), fam, 1, &priority);
+        queueCreateInfos.emplace_back(
+            vk::DeviceQueueCreateFlags(), 
+            fam, 
+            1, 
+            &priority);
     }
 
     auto deviceFeat = vk::PhysicalDeviceFeatures();
@@ -150,13 +153,8 @@ void VulkanInstance::createLogicDevice(){
         createInfo.enabledLayerCount = kValidationLayers.size();
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
     }
-    try{
-        _logicDevice = _phyDevice.createDeviceUnique(createInfo);
-    }catch(vk::SystemError &err){
-        LOGE("Failed to create vulkan logic device, message is {}", err.what());
-        throw std::runtime_error(err.what());
-    }
 
+    _logicDevice = _phyDevice.createDeviceUnique(createInfo);
     _graphicsQueue = _logicDevice->getQueue(indics.graphics.value(), 0);
     _presentQueue = _logicDevice->getQueue(indics.present.value(), 0);
 }
@@ -195,31 +193,23 @@ void VulkanInstance::createSwapChain(){
     createInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
     createInfo.presentMode = mode;
     createInfo.clipped = VK_TRUE;
-
     createInfo.oldSwapchain = vk::SwapchainKHR(nullptr);
-    try {
-        _swapChain = _logicDevice->createSwapchainKHR(createInfo);
-    }
-    catch (vk::SystemError err) {
-        throw std::runtime_error("failed to create swap chain!");
-    }
-
+    _swapChain = _logicDevice->createSwapchainKHR(createInfo);
     _swapImages = _logicDevice->getSwapchainImagesKHR(_swapChain);
     _swapForamt = format.format;
     _swapExtent = extent;
 }
 
 void VulkanInstance::SelectRunningDevice(){
-    auto devices = _instance.enumeratePhysicalDevices();
+    auto devices = _instance->enumeratePhysicalDevices();
     if(devices.empty()){
         throw std::runtime_error("No Physical Device found");
     }
 
-    for(auto i = 0;i < devices.size();i ++){
+    for(auto &&device : devices){
         //LOGI("The {}th device is {}", i, devices[i].)
-        if(CheckDeviceSuitable(devices[i], _surface)){
-            _phyDevice = devices[i];
-            _phyDeviceIndex = i;
+        if(CheckDeviceSuitable(device, _surface)){
+            _phyDevice = device;
             break;//only find one device;
         }
     }
@@ -233,26 +223,34 @@ void VulkanInstance::SelectRunningDevice(){
 }
 
 void VulkanInstance::createInstance(){
-        if(auto ret = CheckPrintVKExtensions(); ret){
+    if(auto ret = CheckPrintVKExtensions(); ret){
         LOGE("Failed to load the vulkan extensions");
         throw std::runtime_error("Can not find any vulkan extensions");
     }
 
-    vk::ApplicationInfo appInfo = { "Hello Vulkan", VK_MAKE_VERSION(1, 0, 0), "Everything but engine", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_0 };        
+    vk::ApplicationInfo appInfo = { 
+        "Hello Vulkan", 
+        VK_MAKE_VERSION(1, 0, 0), 
+        "Everything but engine", 
+        VK_MAKE_VERSION(1, 0, 0), 
+        VK_API_VERSION_1_0 };        
     if (gEnableValidationLayer && !CheckValidationLayerSupport(kValidationLayers)) {
         LOGE("The device donot support validation layer provided!");
         throw std::runtime_error("Enable Validation Layer, but can not find any supported validate layer!");
     }
 
     auto glfwExts = Vulkan::QueryGlfwExtension();
-    glfwExts.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    vk::InstanceCreateInfo createInfo = { vk::InstanceCreateFlags{}, &appInfo };
-    createInfo.enabledLayerCount = 0;
+    vk::InstanceCreateInfo createInfo = { 
+        vk::InstanceCreateFlags{}, 
+        &appInfo,
+        0,
+        nullptr,
+        (uint32_t)glfwExts.size(),
+        glfwExts.data()
+    };
     if(gEnableValidationLayer){
         createInfo.enabledLayerCount = kValidationLayers.size();
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
-        createInfo.enabledExtensionCount = glfwExts.size();
-        createInfo.ppEnabledExtensionNames = glfwExts.data();
     }
 
     for(auto&&l : kValidationLayers){
@@ -263,15 +261,12 @@ void VulkanInstance::createInstance(){
         LOGI("Enable extension {}", name);
     }
 
-    if (auto vkRet = vk::createInstance(&createInfo, nullptr, &_instance); vkRet != vk::Result::eSuccess) {
-        LOGE("Create Vulkan _instance faield return code is {}", static_cast<int>(vkRet));
-        std::runtime_error("Failed to create vulkan _instance");
-    }
+    _instance = vk::createInstanceUnique(createInfo, nullptr);
 }
 
 void VulkanInstance::createSurface(GLFWwindow *window){
     VkSurfaceKHR surface{};
-    if(VK_SUCCESS != glfwCreateWindowSurface(_instance, window, nullptr, &surface)){
+    if(VK_SUCCESS != glfwCreateWindowSurface(*_instance, window, nullptr, &surface)){
         throw std::runtime_error("Failed to create window surface");
     }
 
@@ -290,7 +285,7 @@ void VulkanInstance::setupDebugCallback(){
         DebugCallback,
         nullptr
     };
-    if(CreateDebugUtilsMessengerEXT(_instance, reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(&createInfo), nullptr, &callback)){
+    if(CreateDebugUtilsMessengerEXT(*_instance, reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(&createInfo), nullptr, &callback)){
         throw std::runtime_error("Failed to register debug utils");
     }
 }
@@ -312,28 +307,16 @@ void VulkanInstance::createImageViews(){
         createInfo.subresourceRange.levelCount = 1;
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
-
-        try {
-            _swapChainImageViews[i] = _logicDevice->createImageView(createInfo);
-        }
-        catch (vk::SystemError err) {
-            throw std::runtime_error("failed to create image views!");
-        }
+        _swapChainImageViews[i] = _logicDevice->createImageView(createInfo);
     }
 }
 
-static vk::UniqueShaderModule CreateShaderModule(const vk::UniqueDevice &device, const std::vector<char> &code){
-    try{
-        return device->createShaderModuleUnique(
-            {
-                vk::ShaderModuleCreateFlags(),
-                code.size(),
-                (uint32_t*)code.data(),
-            }
-        );
-    }catch(vk::SystemError &err){
-        throw std::runtime_error("Failed to crate shader module!");
-    }
+const vk::ShaderModule CreateShaderModule(const vk::Device device,const std::vector<char> &code){
+    return device.createShaderModule({
+        vk::ShaderModuleCreateFlags(),
+        code.size(),
+        reinterpret_cast<const uint32_t*>(code.data())
+    });
 }
 
 void VulkanInstance::createGraphicsPipeline(){
@@ -341,17 +324,19 @@ void VulkanInstance::createGraphicsPipeline(){
     auto fragShaderStr = Utils::FileSystem::ReadFile(FileSystem::PathJoin(kShaderPath, "frag.spv"));
     LOGD("Vertex Shader:{}", vertShaderStr.size());
     LOGD("Fragment Shader:{}", fragShaderStr.size());
-    vk::PipelineShaderStageCreateInfo renderStage[] = {
+    auto vertModule = CreateShaderModule(*_logicDevice, vertShaderStr);
+    auto fragModule = CreateShaderModule(*_logicDevice, fragShaderStr);
+    vk::PipelineShaderStageCreateInfo shaderStages[] = {
         {
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eVertex,
-            *CreateShaderModule(_logicDevice, vertShaderStr),
+            vertModule,
             "main"
         },
         {
             vk::PipelineShaderStageCreateFlags(),
             vk::ShaderStageFlagBits::eFragment,
-            *CreateShaderModule(_logicDevice, fragShaderStr),
+            fragModule,
             "main"
         }
     };
@@ -410,18 +395,11 @@ void VulkanInstance::createGraphicsPipeline(){
     colorBlending.blendConstants[3] = 0.0f;
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = {};
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-
-    try {
-        _renderLayout = _logicDevice->createPipelineLayout(pipelineLayoutInfo);
-    } catch (vk::SystemError err) {
-        throw std::runtime_error("failed to create pipeline layout!");
-    }
+    _renderLayout = _logicDevice->createPipelineLayout(pipelineLayoutInfo);
 
     vk::GraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = renderStage;
+    pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
@@ -432,13 +410,9 @@ void VulkanInstance::createGraphicsPipeline(){
     pipelineInfo.renderPass = _renderPass;
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = nullptr;
-
-    try {
-        _renderPipeline = _logicDevice->createGraphicsPipeline(nullptr, pipelineInfo).value;
-    }
-    catch (vk::SystemError err) {
-        throw std::runtime_error("failed to create graphics pipeline!");
-    }
+    _renderPipeline = _logicDevice->createGraphicsPipeline(nullptr, pipelineInfo).value;
+    _logicDevice->destroyShaderModule(vertModule);
+    _logicDevice->destroyShaderModule(fragModule);
 }
 
 void VulkanInstance::createFrameBuffers(){
@@ -456,12 +430,7 @@ void VulkanInstance::createFrameBuffers(){
         framebufferInfo.width = _swapExtent.width;
         framebufferInfo.height = _swapExtent.height;
         framebufferInfo.layers = 1;
-
-        try {
-            _framebuffers[i] = _logicDevice->createFramebuffer(framebufferInfo);
-        } catch (vk::SystemError err) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
+        _framebuffers[i] = _logicDevice->createFramebuffer(framebufferInfo);
     }
 }
 
@@ -486,12 +455,6 @@ void VulkanInstance::createRenderPass(){
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
 
-    vk::RenderPassCreateInfo renderPassInfo = {};
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-
     vk::SubpassDependency dependency = {};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
@@ -499,28 +462,22 @@ void VulkanInstance::createRenderPass(){
     dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     dependency.srcAccessMask = {};
     dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
-
+    
+    vk::RenderPassCreateInfo renderPassInfo = {};
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
-
-    try {
-        _renderPass = _logicDevice->createRenderPass(renderPassInfo);
-    } catch (vk::SystemError err) {
-        throw std::runtime_error(std::format("failed to create render pass!{}", err.what()));
-    }
+    _renderPass = _logicDevice->createRenderPass(renderPassInfo);
 }
 
 void VulkanInstance::createCommandPool(){
     auto queueFamilyIndices = Vulkan::QueryQueueFamilyIndices(_phyDevice, _surface);
     vk::CommandPoolCreateInfo poolInfo = {};
     poolInfo.queueFamilyIndex = queueFamilyIndices.graphics.value();
-
-    try {
-        _cmdPool = _logicDevice->createCommandPool(poolInfo);
-    }
-    catch (vk::SystemError err) {
-        throw std::runtime_error("failed to create command pool!");
-    }
+    _cmdPool = _logicDevice->createCommandPool(poolInfo);
 }
 
 void VulkanInstance::createCommandBuffer(){
@@ -531,23 +488,11 @@ void VulkanInstance::createCommandBuffer(){
     allocInfo.level = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = (uint32_t)_cmdBuffers.size();
 
-    try {
-        _cmdBuffers = _logicDevice->allocateCommandBuffers(allocInfo);
-    } catch (vk::SystemError err) {
-        throw std::runtime_error("failed to allocate command buffers!");
-    }
-
+    _cmdBuffers = _logicDevice->allocateCommandBuffers(allocInfo);
     for (size_t i = 0; i < _cmdBuffers.size(); i++) {
         vk::CommandBufferBeginInfo beginInfo = {};
         beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
-
-        try {
-            _cmdBuffers[i].begin(beginInfo);
-        }
-        catch (vk::SystemError err) {
-            throw std::runtime_error("failed to begin recording command buffer!");
-        }
-
+        _cmdBuffers[i].begin(beginInfo);
         vk::RenderPassBeginInfo renderPassInfo = {};
         renderPassInfo.renderPass = _renderPass;
         renderPassInfo.framebuffer = _framebuffers[i];
@@ -562,11 +507,7 @@ void VulkanInstance::createCommandBuffer(){
         _cmdBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
         _cmdBuffers[i].draw(3, 1, 0, 0);
         _cmdBuffers[i].endRenderPass();
-        try {
-            _cmdBuffers[i].end();
-        } catch (vk::SystemError err) {
-            throw std::runtime_error("failed to record command buffer!");
-        }
+        _cmdBuffers[i].end();
     }
 }
 
@@ -575,14 +516,10 @@ void VulkanInstance::createSyncObject(){
     _renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
     _inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
 
-    try {
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            _imageAvailableSemaphores[i] = _logicDevice->createSemaphore({});
-            _renderFinishedSemaphores[i] = _logicDevice->createSemaphore({});
-            _inFlightFences[i] = _logicDevice->createFence({vk::FenceCreateFlagBits::eSignaled});
-        }
-    } catch (vk::SystemError err) {
-        throw std::runtime_error("failed to create synchronization objects for a frame!");
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        _imageAvailableSemaphores[i] = _logicDevice->createSemaphore({});
+        _renderFinishedSemaphores[i] = _logicDevice->createSemaphore({});
+        _inFlightFences[i] = _logicDevice->createFence({vk::FenceCreateFlagBits::eSignaled});
     }
 }
 
@@ -632,17 +569,17 @@ void VulkanInstance::destroy(){
         _logicDevice->destroySwapchainKHR(_swapChain);
     }
     if(_surface){
-        _instance.destroySurfaceKHR(_surface);
+        _instance->destroySurfaceKHR(_surface);
         _surface = nullptr;
     }
 
     _phyDevice = nullptr;
     if(gEnableValidationLayer){
-        DestroyDebugUtilsMessengerEXT(_instance, callback, nullptr);
+        DestroyDebugUtilsMessengerEXT(*_instance, callback, nullptr);
         callback = nullptr;
     }
 
-    _instance = nullptr;
+    _instance.reset();
 }
 
 void VulkanInstance::draw(){
@@ -667,11 +604,7 @@ void VulkanInstance::draw(){
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    try {
-        _graphicsQueue.submit(submitInfo, _inFlightFences[_currentFrame]);
-    } catch (vk::SystemError err) {
-        throw std::runtime_error("failed to submit draw command buffer!");
-    }
+    _graphicsQueue.submit(submitInfo, _inFlightFences[_currentFrame]);
 
     vk::PresentInfoKHR presentInfo = {};
     presentInfo.waitSemaphoreCount = 1;
