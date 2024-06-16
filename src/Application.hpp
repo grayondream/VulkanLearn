@@ -10,7 +10,9 @@ public:
 	std::error_code init();
 	std::error_code run();
 	std::error_code destroy();
-
+	
+public:
+	bool _frameBufferResized = false;
 private:
 	std::error_code initWindow();
 

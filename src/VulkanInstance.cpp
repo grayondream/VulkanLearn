@@ -3,6 +3,7 @@
 #include "Log.hpp"
 #include "ErrorCode.hpp"
 #include <GLFW/glfw3.h>
+#include <bits/types/wint_t.h>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -12,6 +13,8 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
 #include <set>
+#include <glm/glm.hpp>
+#include "Vertext.hpp"
 
 using namespace Utils;
 using namespace Utils::Vulkan;
@@ -125,6 +128,42 @@ vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormat
     }
 
     return availableFormats[0];
+}
+
+void VulkanInstance::cleanSwapChain(){
+    for (auto framebuffer : _framebuffers) {
+        _logicDevice->destroyFramebuffer(framebuffer);
+    }
+
+    _logicDevice->freeCommandBuffers(_cmdPool, _cmdBuffers);
+    _logicDevice->destroyPipeline(_renderPipeline);
+    _logicDevice->destroyPipelineLayout(_renderLayout);
+    _logicDevice->destroyRenderPass(_renderPass);
+    for(auto && view : _swapChainImageViews){
+        _logicDevice->destroyImageView(view);
+    }
+
+    if(_swapChain && _logicDevice){
+        _logicDevice->destroySwapchainKHR(_swapChain);
+    }
+}
+
+void VulkanInstance::recreateSwapChain(){
+    int width = 0, height = 0;
+    while(width == 0 || height == 0){
+        glfwGetFramebufferSize(_pwindows, &width, &height);
+        glfwWaitEvents();
+    }
+
+    _logicDevice->waitIdle();
+    cleanSwapChain();
+    createSwapChain();
+    createImageViews();
+    createImageViews();
+    createRenderPass();
+    createGraphicsPipeline();
+    createFrameBuffers();
+    createCommandBuffer();
 }
 
 void VulkanInstance::createLogicDevice(){
@@ -542,32 +581,19 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
 
 void VulkanInstance::destroy(){
     if(!_instance) return;
+    cleanSwapChain();
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         _logicDevice->destroySemaphore(_renderFinishedSemaphores[i]);
         _logicDevice->destroySemaphore(_imageAvailableSemaphores[i]);
         _logicDevice->destroyFence(_inFlightFences[i]);
     }
 
-    _logicDevice->destroyCommandPool(_cmdPool);
-    for (auto framebuffer : _framebuffers) {
-        _logicDevice->destroyFramebuffer(framebuffer);
-    }
-
-    _logicDevice->destroyPipeline(_renderPipeline);
-    _logicDevice->destroyPipelineLayout(_renderLayout);
-    _logicDevice->destroyRenderPass(_renderPass);
-    for(auto && view : _swapChainImageViews){
-        _logicDevice->destroyImageView(view);
-    }
-
+    _logicDevice->destroyCommandPool(_cmdPool);    
     if(_logicDevice){
         _logicDevice->waitIdle();
         _logicDevice.reset();
     }
 
-    if(_swapChain && _logicDevice){
-        _logicDevice->destroySwapchainKHR(_swapChain);
-    }
     if(_surface){
         _instance->destroySurfaceKHR(_surface);
         _surface = nullptr;

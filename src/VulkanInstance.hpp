@@ -30,7 +30,9 @@ private:
     void createCommandBuffer();
     void createCommandPool();
     void createSyncObject();
-
+    void cleanSwapChain();
+    void recreateSwapChain();
+    
 private:
     vk::UniqueInstance _instance{};
     vk::PhysicalDevice _phyDevice{};
