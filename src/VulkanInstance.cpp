@@ -40,7 +40,7 @@ static const std::vector<const char*> kDeviceExtensions = {
 };
 
 const std::vector<Vertex> gVertics = {
-    {{0.5,-0.5},{1.0,0,0.0}},
+    {{0,-0.5},{1.0,0,0.0}},
     {{0.5,0.5},{0.0,1.0,0.0}},
     {{-0.5,0.5},{0.0,0.0,1.0}}
 };
