@@ -631,7 +631,7 @@ void VulkanInstance::createCommandBuffer(){
         renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
         renderPassInfo.renderArea.extent = _swapExtent;
 
-        vk::ClearValue clearColor = { std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f } };
+        vk::ClearValue clearColor = { std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 1.0f } };
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearColor;
 
