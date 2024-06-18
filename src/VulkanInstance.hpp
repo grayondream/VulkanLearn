@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_handles.hpp>
 
 class VulkanInstance {
 public:
@@ -28,10 +29,15 @@ private:
     void createRenderPass();
     void createFrameBuffers();
     void createCommandBuffer();
+    void createVertexBuffer();
     void createCommandPool();
     void createSyncObject();
     void cleanSwapChain();
     void recreateSwapChain();
+    void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
+
+public:
+    bool _frameBufferResized{false};
     
 private:
     vk::UniqueInstance _instance{};
@@ -59,4 +65,6 @@ private:
     std::vector<vk::Semaphore> _renderFinishedSemaphores;
     std::vector<vk::Fence> _inFlightFences;
     size_t _currentFrame = 0;
+    vk::Buffer _vertexBuffer{};
+    vk::DeviceMemory _vertexBufferMemory{};
 };

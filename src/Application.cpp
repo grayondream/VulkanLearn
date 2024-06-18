@@ -22,11 +22,6 @@ using namespace Vulkan;
 
 static constexpr const unsigned int WIN_HEIGHT = 600;
 static constexpr const unsigned int WIN_WIDTH = 800;
- 
-static void FrameBufferResizedCallback(GLFWwindow* pwin, int width, int height){
-    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(pwin));
-    app->_frameBufferResized = true;
-}
 
 std::error_code Application::initWindow() {
     glfwInit();
@@ -37,9 +32,6 @@ std::error_code Application::initWindow() {
         LOGE("can not create a new window");
         return MakeGenerateError(AppStatus::FAIL);
     }
-
-    glfwSetWindowUserPointer(pwin, this);
-    glfwSetFramebufferSizeCallback(pwin, glfwSetFramebufferSizeCallback);
     return {};
 }
 
