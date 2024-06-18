@@ -40,10 +40,13 @@ static const std::vector<const char*> kDeviceExtensions = {
 };
 
 const std::vector<Vertex> gVertics = {
-    {{0,-0.5},{1.0,0,0.0}},
-    {{0.5,0.5},{0.0,1.0,0.0}},
-    {{-0.5,0.5},{0.0,0.0,1.0}}
+    {{0, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0}, {0.0f, 1.0f, 0.0f}},
+    {{0, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0}, {1.0f, 1.0f, 1.0f}}
 };
+
+const std::vector<uint16_t> gVerticsIndex = {3,0,1,1,2,3};
 
 static std::error_code CheckPrintVKExtensions(){
     auto vkExts = Vulkan::QueryVkExtensions();
@@ -601,7 +604,8 @@ void VulkanInstance::createVertexBuffer(){
 
     auto data = _logicDevice->mapMemory(bufferMemory, 0, bufferSize);
     memcpy(data, gVertics.data(), bufferSize);
-    
+    _logicDevice->unmapMemory(bufferMemory);
+
     auto [buff, buffMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
     _vertexBuffer = buff;
@@ -610,6 +614,28 @@ void VulkanInstance::createVertexBuffer(){
     copyBuffer(buffer, _vertexBuffer, bufferSize);
     _logicDevice->destroyBuffer(buffer);
     _logicDevice->freeMemory(bufferMemory);
+}
+
+void VulkanInstance::createIndexBuffer(){
+    vk::DeviceSize bufferSize = sizeof(gVerticsIndex[0]) * gVerticsIndex.size();
+    vk::Buffer stagingBuffer{};
+    vk::DeviceMemory stagingBufferMemory{};
+    auto [buffer, bufferMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    auto data = _logicDevice->mapMemory(bufferMemory, 0, bufferSize);
+    memcpy(data, gVerticsIndex.data(), bufferSize);
+    _logicDevice->unmapMemory(bufferMemory);
+
+    auto [buff, buffMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
+    vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    _indexBuffer = buff;
+    _indexMemory = buffMemory;
+
+    copyBuffer(buffer, _indexBuffer, bufferSize);
+    _logicDevice->destroyBuffer(buffer);
+    _logicDevice->freeMemory(bufferMemory);
+
 }
 
 void VulkanInstance::createCommandBuffer(){
@@ -641,8 +667,10 @@ void VulkanInstance::createCommandBuffer(){
         vk::Buffer vertexBuffers[] = { _vertexBuffer };
         vk::DeviceSize offsets[] = { 0 };
         _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
+        _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
 
-        _cmdBuffers[i].draw(3, 1, 0, 0);
+        //_cmdBuffers[i].draw(3, 1, 0, 0);
+        _cmdBuffers[i].drawIndexed(gVerticsIndex.size(), 1, 0, 0, 0);
         _cmdBuffers[i].endRenderPass();
         _cmdBuffers[i].end();
     }
@@ -680,6 +708,7 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     createFrameBuffers();
     createCommandPool();
     createVertexBuffer();
+    createIndexBuffer();
     createCommandBuffer();
     createSyncObject();
     return {};
@@ -688,6 +717,8 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
 void VulkanInstance::destroy(){
     if(!_instance) return;
     cleanSwapChain();
+    _logicDevice->destroyBuffer(_indexBuffer);
+    _logicDevice->freeMemory(_indexMemory);
     _logicDevice->destroyBuffer(_vertexBuffer);
     _logicDevice->freeMemory(_vertexBufferMemory);
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {

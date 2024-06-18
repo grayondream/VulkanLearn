@@ -30,6 +30,7 @@ private:
     void createFrameBuffers();
     void createCommandBuffer();
     void createVertexBuffer();
+    void createIndexBuffer();
     void createCommandPool();
     void createSyncObject();
     void cleanSwapChain();
@@ -67,4 +68,6 @@ private:
     size_t _currentFrame = 0;
     vk::Buffer _vertexBuffer{};
     vk::DeviceMemory _vertexBufferMemory{};
+    vk::Buffer _indexBuffer{};
+    vk::DeviceMemory _indexMemory{};
 };
