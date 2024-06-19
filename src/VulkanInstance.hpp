@@ -36,7 +36,9 @@ private:
     void cleanSwapChain();
     void recreateSwapChain();
     void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
-
+    void createDescriptorSetLayout();
+    void createUniformBuffers();
+    
 public:
     bool _frameBufferResized{false};
     
@@ -70,4 +72,8 @@ private:
     vk::DeviceMemory _vertexBufferMemory{};
     vk::Buffer _indexBuffer{};
     vk::DeviceMemory _indexMemory{};
+    vk::DescriptorSetLayout _descSetLayout{};
+    std::vector<VkBuffer> _uniformBuffers;
+    std::vector<VkDeviceMemory> _uniformBuffersMemory;
+    std::vector<void*> _uniformBuffersMapped;
 };
