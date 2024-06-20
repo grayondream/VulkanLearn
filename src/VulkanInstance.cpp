@@ -20,6 +20,7 @@
 #include <vulkan/vulkan_handles.hpp>
 #include <glm/geometric.hpp>
 #include <glm/gtx/transform.hpp>
+#include <vulkan/vulkan_structs.hpp>
 #include "Vertext.hpp"
 
 using namespace Utils;
@@ -657,33 +658,6 @@ void VulkanInstance::createCommandBuffer(){
     allocInfo.commandBufferCount = (uint32_t)_cmdBuffers.size();
 
     _cmdBuffers = _logicDevice->allocateCommandBuffers(allocInfo);
-    for (size_t i = 0; i < _cmdBuffers.size(); i++) {
-        vk::CommandBufferBeginInfo beginInfo = {};
-        beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
-        _cmdBuffers[i].begin(beginInfo);
-        vk::RenderPassBeginInfo renderPassInfo = {};
-        renderPassInfo.renderPass = _renderPass;
-        renderPassInfo.framebuffer = _framebuffers[i];
-        renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
-        renderPassInfo.renderArea.extent = _swapExtent;
-
-        vk::ClearValue clearColor = { std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 1.0f } };
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
-
-        _cmdBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-        _cmdBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
-
-        vk::Buffer vertexBuffers[] = { _vertexBuffer };
-        vk::DeviceSize offsets[] = { 0 };
-        _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
-        _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
-
-        //_cmdBuffers[i].draw(3, 1, 0, 0);
-        _cmdBuffers[i].drawIndexed(gVerticsIndex.size(), 1, 0, 0, 0);
-        _cmdBuffers[i].endRenderPass();
-        _cmdBuffers[i].end();
-    }
 }
 
 void VulkanInstance::createSyncObject(){
@@ -733,6 +707,83 @@ void VulkanInstance::createUniformBuffers(){
     }
 }
 
+void VulkanInstance::createDescriptorPool() {
+    std::array<vk::DescriptorPoolSize, 1> poolSizes = {};
+    poolSizes[0].type = vk::DescriptorType::eUniformBuffer;
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    vk::DescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    _descriptorPool = _logicDevice->createDescriptorPool(poolInfo);
+}
+
+void VulkanInstance::createDescriptorSets() {
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _descSetLayout);
+    vk::DescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.descriptorPool = _descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    _descriptorSets = _logicDevice->allocateDescriptorSets(allocInfo);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vk::DescriptorBufferInfo bufferInfo = {};
+        bufferInfo.buffer = _uniformBuffers[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        vk::WriteDescriptorSet descriptorWrite = {};
+        descriptorWrite.dstSet = _descriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = vk::DescriptorType::eUniformBuffer;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        _logicDevice->updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+    }
+}
+
+void VulkanInstance::recordCommandBuffer(vk::CommandBuffer commandBuffer, uint32_t imageIndex) {
+    vk::CommandBufferBeginInfo beginInfo = {};
+
+    commandBuffer.begin(beginInfo);
+
+    vk::RenderPassBeginInfo renderPassInfo = {};
+    renderPassInfo.renderPass = _renderPass;
+    renderPassInfo.framebuffer = _framebuffers[imageIndex];
+    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
+    renderPassInfo.renderArea.extent = _swapExtent;
+
+    std::array<vk::ClearValue, 2> clearValues = {};
+    clearValues[0].color = vk::ClearColorValue(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+    clearValues[1].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
+
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
+
+    vk::Buffer vertexBuffers[] = {_vertexBuffer};
+    vk::DeviceSize offsets[] = {0};
+    commandBuffer.bindVertexBuffers(0, 1, vertexBuffers, offsets);
+
+    commandBuffer.bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
+
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _renderLayout, 0, 1, &_descriptorSets[imageIndex], 0, nullptr);
+
+    commandBuffer.drawIndexed(static_cast<uint32_t>(gVerticsIndex.size()), 1, 0, 0, 0);
+
+    commandBuffer.endRenderPass();
+
+    commandBuffer.end();
+}
+
 std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, FrameBufferResizedCallback);
@@ -744,11 +795,15 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     createSwapChain();
     createImageViews();
     createRenderPass();
+    createDescriptorSetLayout();
     createGraphicsPipeline();
     createFrameBuffers();
     createCommandPool();
     createVertexBuffer();
     createIndexBuffer();
+    createUniformBuffers();
+    createDescriptorPool();
+    createDescriptorSets();
     createCommandBuffer();
     createSyncObject();
     return {};
@@ -815,6 +870,9 @@ void VulkanInstance::draw(){
     }
     
     updateUniformBuffer(_uniformBuffersMapped[_currentFrame], _swapExtent);
+    t = _logicDevice->resetFences(1, &_inFlightFences[_currentFrame]);
+    _cmdBuffers[_currentFrame].reset();
+    recordCommandBuffer(_cmdBuffers[_currentFrame], imageIndex);
     vk::SubmitInfo submitInfo = {};
 
     vk::Semaphore waitSemaphores[] = { _imageAvailableSemaphores[_currentFrame] };

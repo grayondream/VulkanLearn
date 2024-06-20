@@ -38,7 +38,9 @@ private:
     void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
     void createDescriptorSetLayout();
     void createUniformBuffers();
-    
+    void createDescriptorSets();
+    void createDescriptorPool();
+    void recordCommandBuffer(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
 public:
     bool _frameBufferResized{false};
     
@@ -76,4 +78,6 @@ private:
     std::vector<VkBuffer> _uniformBuffers;
     std::vector<VkDeviceMemory> _uniformBuffersMemory;
     std::vector<void*> _uniformBuffersMapped;
+    vk::DescriptorPool _descriptorPool;
+    std::vector<vk::DescriptorSet> _descriptorSets;
 };
