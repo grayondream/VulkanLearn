@@ -1,7 +1,9 @@
+#define GLM_FORCE_RADIANS
 #include "VulkanInstance.hpp"
 #include "Utils.hpp"
 #include "Log.hpp"
 #include "ErrorCode.hpp"
+#include "Vertext.hpp"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <bits/types/wint_t.h>
@@ -18,10 +20,17 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
-#include "Vertext.hpp"
+#include <chrono>
+#include <glm/gtx/transform2.hpp>
 
 using namespace Utils;
 using namespace Utils::Vulkan;
+
+struct MVPUniformMatrix{
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 project;
+};
 
 static constexpr const int MAX_FRAMES_IN_FLIGHT = 2;
 const std::vector<const char*> kValidationLayers = {
@@ -40,13 +49,13 @@ static const std::vector<const char*> kDeviceExtensions = {
 };
 
 const std::vector<Vertex> gVertics = {
-    {{0, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0}, {0.0f, 1.0f, 0.0f}},
-    {{0, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 };
 
-const std::vector<uint16_t> gVerticsIndex = {3,0,1,1,2,3};
+const std::vector<uint16_t> gVerticsIndex = {    0, 1, 2, 2, 3, 0};
 
 static std::error_code CheckPrintVKExtensions(){
     auto vkExts = Vulkan::QueryVkExtensions();
@@ -455,6 +464,8 @@ void VulkanInstance::createGraphicsPipeline(){
     colorBlending.blendConstants[3] = 0.0f;
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &_descSetLayout;
     _renderLayout = _logicDevice->createPipelineLayout(pipelineLayoutInfo);
 
     vk::GraphicsPipelineCreateInfo pipelineInfo = {};
@@ -647,7 +658,7 @@ void VulkanInstance::createCommandBuffer(){
     allocInfo.commandBufferCount = (uint32_t)_cmdBuffers.size();
 
     _cmdBuffers = _logicDevice->allocateCommandBuffers(allocInfo);
-    for (size_t i = 0; i < _cmdBuffers.size(); i++) {
+        for (size_t i = 0; i < _cmdBuffers.size(); i++) {
         vk::CommandBufferBeginInfo beginInfo = {};
         beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
         _cmdBuffers[i].begin(beginInfo);
@@ -693,24 +704,76 @@ static void FrameBufferResizedCallback(GLFWwindow* pwin, int width, int height){
     app->_frameBufferResized = true;
 }
 
+void VulkanInstance::createDescriptorSetLayout(){
+    vk::DescriptorSetLayoutBinding uboLayout{};
+    uboLayout.binding = 0;
+    uboLayout.descriptorCount = 1;
+    uboLayout.pImmutableSamplers = nullptr;
+    uboLayout.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    uboLayout.descriptorType = vk::DescriptorType::eUniformBuffer;
+
+    vk::DescriptorSetLayoutCreateInfo info{};
+    info.bindingCount = 1;
+    info.pBindings = &uboLayout;
+
+    _descSetLayout = _logicDevice->createDescriptorSetLayout(info);
+}
+
+void VulkanInstance::createUniformBuffer(){
+    vk::DeviceSize size = sizeof(MVPUniformMatrix);
+    _mvpBuffer.resize(MAX_FRAMES_IN_FLIGHT);
+    _mvpData.resize(MAX_FRAMES_IN_FLIGHT);
+    _mvpMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    for(auto i = 0;i < MAX_FRAMES_IN_FLIGHT;i ++){
+        auto ret = CreateBuffer(_phyDevice, _logicDevice.get(), size, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        _mvpBuffer[i] = ret.first;
+        _mvpMemory[i] = ret.second;
+        _mvpData[i] = _logicDevice->mapMemory(_mvpMemory[i], 0, size);
+    }
+}
+
+void VulkanInstance::updateUniformBuffer(const uint32_t currentImage) {
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    MVPUniformMatrix ubo = {};
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.project = glm::perspective(glm::radians(45.0f), _swapExtent.width / (float) _swapExtent.height, 0.1f, 10.0f);
+    ubo.project[1][1] *= -1;  // Vulkan Y coordinate correction
+
+    // Copy data to the mapped memory
+    memcpy(_mvpData[currentImage], &ubo, sizeof(ubo));
+}
+
 std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, FrameBufferResizedCallback);
-    createInstance();
-    setupDebugCallback();
-    createSurface(window);
-    SelectRunningDevice();
-    createLogicDevice();
-    createSwapChain();
-    createImageViews();
-    createRenderPass();
-    createGraphicsPipeline();
-    createFrameBuffers();
-    createCommandPool();
-    createVertexBuffer();
-    createIndexBuffer();
-    createCommandBuffer();
-    createSyncObject();
+    try{
+        createInstance();
+        setupDebugCallback();
+        createSurface(window);
+        SelectRunningDevice();
+        createLogicDevice();
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createDescriptorSetLayout();
+        createGraphicsPipeline();
+        createFrameBuffers();
+        createCommandPool();
+        createVertexBuffer();
+        createIndexBuffer();
+        createUniformBuffer();
+        createCommandBuffer();
+        createSyncObject();
+    }catch(const std::runtime_error &err){
+        destroy();
+        return std::make_error_code(std::errc::operation_canceled);
+    }
+
     return {};
 }
 
@@ -725,8 +788,11 @@ void VulkanInstance::destroy(){
         _logicDevice->destroySemaphore(_renderFinishedSemaphores[i]);
         _logicDevice->destroySemaphore(_imageAvailableSemaphores[i]);
         _logicDevice->destroyFence(_inFlightFences[i]);
+        _logicDevice->destroyBuffer(_mvpBuffer[i]);
+        _logicDevice->freeMemory(_mvpMemory[i]);
     }
 
+    _logicDevice->destroyDescriptorSetLayout(_descSetLayout);
     _logicDevice->destroyCommandPool(_cmdPool);    
     if(_logicDevice){
         _logicDevice->waitIdle();
@@ -747,6 +813,39 @@ void VulkanInstance::destroy(){
     _instance.reset();
 }
 
+void VulkanInstance::recordCommandBuffer(const uint32_t i){
+    vk::CommandBufferBeginInfo beginInfo = {};
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
+    _cmdBuffers[i].begin(beginInfo);
+
+    {
+        vk::RenderPassBeginInfo renderPassInfo = {};
+        renderPassInfo.renderPass = _renderPass;
+        renderPassInfo.framebuffer = _framebuffers[i];
+        renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
+        renderPassInfo.renderArea.extent = _swapExtent;
+
+        vk::ClearValue clearColor = { std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 1.0f } };
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+
+        _cmdBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+        _cmdBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
+        {
+            vk::Buffer vertexBuffers[] = { _vertexBuffer };
+            vk::DeviceSize offsets[] = { 0 };
+            _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
+            _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
+
+            //_cmdBuffers[i].draw(3, 1, 0, 0);
+            _cmdBuffers[i].drawIndexed(gVerticsIndex.size(), 1, 0, 0, 0);
+        }
+        _cmdBuffers[i].endRenderPass();
+    }
+
+    _cmdBuffers[i].end();
+}
+
 void VulkanInstance::draw(){
     [[maybe_unused]]auto t = _logicDevice->waitForFences(1, &_inFlightFences[_currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
     uint32_t imageIndex{};
@@ -758,8 +857,12 @@ void VulkanInstance::draw(){
         return;
     }
     
-    vk::SubmitInfo submitInfo = {};
+    updateUniformBuffer(_currentFrame);
+    [[maybe_unused]]auto r = _logicDevice->resetFences(1, &_inFlightFences[_currentFrame]);
+    _cmdBuffers[_currentFrame].reset();
+    recordCommandBuffer(_currentFrame);
 
+    vk::SubmitInfo submitInfo = {};
     vk::Semaphore waitSemaphores[] = { _imageAvailableSemaphores[_currentFrame] };
     vk::PipelineStageFlags waitStages[] = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
     submitInfo.waitSemaphoreCount = 1;
@@ -773,7 +876,7 @@ void VulkanInstance::draw(){
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    [[maybe_unused]]auto r = _logicDevice->resetFences(1, &_inFlightFences[_currentFrame]);
+    
     _graphicsQueue.submit(submitInfo, _inFlightFences[_currentFrame]);
 
     vk::PresentInfoKHR presentInfo = {};

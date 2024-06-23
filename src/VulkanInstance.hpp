@@ -35,8 +35,11 @@ private:
     void createSyncObject();
     void cleanSwapChain();
     void recreateSwapChain();
+    void createUniformBuffer();
+    void createDescriptorSetLayout();
     void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
-
+    void updateUniformBuffer(const uint32_t currentImage);
+    void recordCommandBuffer(const uint32_t index);
 public:
     bool _frameBufferResized{false};
     
@@ -70,4 +73,8 @@ private:
     vk::DeviceMemory _vertexBufferMemory{};
     vk::Buffer _indexBuffer{};
     vk::DeviceMemory _indexMemory{};
+    vk::DescriptorSetLayout _descSetLayout{};
+    std::vector<vk::Buffer> _mvpBuffer{};
+    std::vector<vk::DeviceMemory> _mvpMemory{};
+    std::vector<void*> _mvpData{};
 };
