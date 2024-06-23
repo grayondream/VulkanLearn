@@ -18,8 +18,6 @@
 #include <glm/glm.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
-#include <glm/geometric.hpp>
-#include <glm/gtx/transform.hpp>
 #include "Vertext.hpp"
 
 using namespace Utils;
@@ -46,12 +44,6 @@ const std::vector<Vertex> gVertics = {
     {{0.5f, 0}, {0.0f, 1.0f, 0.0f}},
     {{0, 0.5f}, {0.0f, 0.0f, 1.0f}},
     {{-0.5f, 0}, {1.0f, 1.0f, 1.0f}}
-};
-
-struct UniformBufferObject {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
 };
 
 const std::vector<uint16_t> gVerticsIndex = {3,0,1,1,2,3};
@@ -463,8 +455,6 @@ void VulkanInstance::createGraphicsPipeline(){
     colorBlending.blendConstants[3] = 0.0f;
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = {};
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &_descSetLayout;
     _renderLayout = _logicDevice->createPipelineLayout(pipelineLayoutInfo);
 
     vk::GraphicsPipelineCreateInfo pipelineInfo = {};
@@ -703,36 +693,6 @@ static void FrameBufferResizedCallback(GLFWwindow* pwin, int width, int height){
     app->_frameBufferResized = true;
 }
 
-void VulkanInstance::createDescriptorSetLayout(){
-    vk::DescriptorSetLayoutBinding uboLayoutBingding{};
-    uboLayoutBingding.binding = 0;
-    uboLayoutBingding.descriptorType = vk::DescriptorType::eUniformBuffer;
-    uboLayoutBingding.descriptorCount = 1;
-    uboLayoutBingding.stageFlags = vk::ShaderStageFlagBits::eVertex;
-    uboLayoutBingding.pImmutableSamplers = nullptr;
-
-    vk::PipelineLayout pipelineLayout{};
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBingding;
-
-    _descSetLayout = _logicDevice->createDescriptorSetLayout(layoutInfo, nullptr);
-}
-
-void VulkanInstance::createUniformBuffers(){
-    vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-    _uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-    _uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
-    _uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
-    for(auto i = 0 ;i < MAX_FRAMES_IN_FLIGHT;i ++){
-        auto [buff, buffMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        _uniformBuffers[i] = buff;
-        _uniformBuffersMemory[i] = buffMemory;
-        auto data = _logicDevice->mapMemory(_uniformBuffersMemory[i], 0, bufferSize);
-        _uniformBuffersMapped[i] = data;
-    }
-}
-
 std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t width, const uint32_t height) {
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, FrameBufferResizedCallback);
@@ -767,7 +727,6 @@ void VulkanInstance::destroy(){
         _logicDevice->destroyFence(_inFlightFences[i]);
     }
 
-    _logicDevice->destroyDescriptorSetLayout(_descSetLayout);
     _logicDevice->destroyCommandPool(_cmdPool);    
     if(_logicDevice){
         _logicDevice->waitIdle();
@@ -788,21 +747,6 @@ void VulkanInstance::destroy(){
     _instance.reset();
 }
 
-void updateUniformBuffer(void *data, vk::Extent2D extend) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
-
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
-
-        UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), extend.width / (float) extend.height, 0.1f, 10.0f);
-        ubo.proj[1][1] *= -1;
-
-        memcpy(data, &ubo, sizeof(ubo));
-}
-
 void VulkanInstance::draw(){
     [[maybe_unused]]auto t = _logicDevice->waitForFences(1, &_inFlightFences[_currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
     uint32_t imageIndex{};
@@ -814,7 +758,6 @@ void VulkanInstance::draw(){
         return;
     }
     
-    updateUniformBuffer(_uniformBuffersMapped[_currentFrame], _swapExtent);
     vk::SubmitInfo submitInfo = {};
 
     vk::Semaphore waitSemaphores[] = { _imageAvailableSemaphores[_currentFrame] };
