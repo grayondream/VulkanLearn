@@ -27,9 +27,9 @@ using namespace Utils;
 using namespace Utils::Vulkan;
 
 struct MVPUniformMatrix{
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 project;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 static constexpr const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -442,9 +442,9 @@ void VulkanInstance::createGraphicsPipeline(){
     rasterizer.polygonMode = vk::PolygonMode::eFill;
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-    rasterizer.frontFace = vk::FrontFace::eClockwise;
+    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
     rasterizer.depthBiasEnable = VK_FALSE;
-
+    
     vk::PipelineMultisampleStateCreateInfo multisampling = {};
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
@@ -732,17 +732,55 @@ void VulkanInstance::createUniformBuffer(){
     }
 }
 
+void VulkanInstance::createDescriptorPool(){
+    vk::DescriptorPoolSize poolSize{};
+    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    vk::DescriptorPoolCreateInfo poolInfo{};
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    _descriptorPool = _logicDevice->createDescriptorPool(poolInfo, nullptr);
+}
+
+void VulkanInstance::createDescriptorSets(){
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, _descSetLayout);
+    vk::DescriptorSetAllocateInfo allocInfo{};
+    allocInfo.descriptorPool = _descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    _descriptorSets = _logicDevice->allocateDescriptorSets(allocInfo);
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        vk::DescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = _mvpBuffer[i];
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(MVPUniformMatrix);
+
+        vk::WriteDescriptorSet descriptorWrite{};
+        descriptorWrite.dstSet = _descriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = vk::DescriptorType::eUniformBuffer;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        _logicDevice->updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+    }
+}
+
 void VulkanInstance::updateUniformBuffer(const uint32_t currentImage) {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count() * 10;
 
     MVPUniformMatrix ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.project = glm::perspective(glm::radians(45.0f), _swapExtent.width / (float) _swapExtent.height, 0.1f, 10.0f);
-    ubo.project[1][1] *= -1;  // Vulkan Y coordinate correction
+    ubo.proj = glm::perspective(glm::radians(45.0f), _swapExtent.width / (float) _swapExtent.height, 0.1f, 10.0f);
+    ubo.proj[1][1] *= -1;  // Vulkan Y coordinate correction
 
     // Copy data to the mapped memory
     memcpy(_mvpData[currentImage], &ubo, sizeof(ubo));
@@ -767,6 +805,8 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffer();
+        createDescriptorPool();
+        createDescriptorSets();
         createCommandBuffer();
         createSyncObject();
     }catch(const std::runtime_error &err){
@@ -792,6 +832,7 @@ void VulkanInstance::destroy(){
         _logicDevice->freeMemory(_mvpMemory[i]);
     }
 
+    _logicDevice->destroyDescriptorPool(_descriptorPool);
     _logicDevice->destroyDescriptorSetLayout(_descSetLayout);
     _logicDevice->destroyCommandPool(_cmdPool);    
     if(_logicDevice){
@@ -836,7 +877,7 @@ void VulkanInstance::recordCommandBuffer(const uint32_t i){
             vk::DeviceSize offsets[] = { 0 };
             _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
             _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
-
+            _cmdBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _renderLayout, 0, _descriptorSets[i], {});
             //_cmdBuffers[i].draw(3, 1, 0, 0);
             _cmdBuffers[i].drawIndexed(gVerticsIndex.size(), 1, 0, 0, 0);
         }

@@ -40,6 +40,8 @@ private:
     void copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size);
     void updateUniformBuffer(const uint32_t currentImage);
     void recordCommandBuffer(const uint32_t index);
+    void createDescriptorPool();
+    void createDescriptorSets();
 public:
     bool _frameBufferResized{false};
     
@@ -77,4 +79,6 @@ private:
     std::vector<vk::Buffer> _mvpBuffer{};
     std::vector<vk::DeviceMemory> _mvpMemory{};
     std::vector<void*> _mvpData{};
+    vk::DescriptorPool _descriptorPool{};
+    std::vector<vk::DescriptorSet> _descriptorSets{};
 };
