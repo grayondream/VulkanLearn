@@ -22,6 +22,8 @@
 #include <vulkan/vulkan_handles.hpp>
 #include <chrono>
 #include <glm/gtx/transform2.hpp>
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 using namespace Utils;
 using namespace Utils::Vulkan;
@@ -43,7 +45,7 @@ static constexpr const bool gEnableValidationLayer = false;
 #endif//NDEBUG
 
 static constexpr const char* kShaderPath = "/home/ares/home/Code/VulkanLearn/shader";
-
+static constexpr const char* kResourcesPath = "/home/ares/home/Code/VulkanLearn/resources";
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
@@ -575,35 +577,188 @@ std::pair<vk::Buffer, vk::DeviceMemory> CreateBuffer(const vk::PhysicalDevice &p
     return {buffer, bufferMemory};
 }
 
-void VulkanInstance::copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size) {
+vk::CommandBuffer SingleTimeCommandBegin(const vk::CommandPool cmdPool, const vk::Device& device){
     vk::CommandBufferAllocateInfo allocInfo = {};
     allocInfo.level = vk::CommandBufferLevel::ePrimary;
-    allocInfo.commandPool = _cmdPool;
+    allocInfo.commandPool = cmdPool;
     allocInfo.commandBufferCount = 1;
 
-    vk::CommandBuffer commandBuffer = _logicDevice->allocateCommandBuffers(allocInfo)[0];
+    vk::CommandBuffer commandBuffer = device.allocateCommandBuffers(allocInfo)[0];
 
     vk::CommandBufferBeginInfo beginInfo = {};
     beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
     commandBuffer.begin(beginInfo);
+    return commandBuffer;
+}
 
-        vk::BufferCopy copyRegion = {};
-        copyRegion.srcOffset = 0; // Optional
-        copyRegion.dstOffset = 0; // Optional
-        copyRegion.size = size;
-        commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
-
+void SingleTimeCommandEnd(const vk::CommandPool cmdPool, const vk::Device& device, const vk::CommandBuffer &commandBuffer, const vk::Queue &queue){
     commandBuffer.end();
-
     vk::SubmitInfo submitInfo = {};
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    _graphicsQueue.submit(submitInfo, nullptr);
-    _graphicsQueue.waitIdle();
+    queue.submit(submitInfo, nullptr);
+    queue.waitIdle();
 
-    _logicDevice->freeCommandBuffers(_cmdPool, commandBuffer);
+    device.freeCommandBuffers(cmdPool, commandBuffer);
+}
+
+void VulkanInstance::copyBuffer(vk::Buffer srcBuffer, vk::Buffer dstBuffer, vk::DeviceSize size) {
+    auto commandBuffer = SingleTimeCommandBegin(_cmdPool, *_logicDevice);
+
+    vk::BufferCopy copyRegion = {};
+    copyRegion.srcOffset = 0; // Optional
+    copyRegion.dstOffset = 0; // Optional
+    copyRegion.size = size;
+    commandBuffer.copyBuffer(srcBuffer, dstBuffer, copyRegion);
+
+    SingleTimeCommandEnd(_cmdPool, *_logicDevice, commandBuffer, _graphicsQueue);
+}
+
+struct Size{
+    uint32_t width;
+    uint32_t height;
+};
+
+struct CommandContext{
+    vk::CommandPool cmdPool;
+    vk::Device device; 
+    vk::Queue queue;
+    vk::PhysicalDevice phyDevice;
+};
+
+void CopyBuffer2Image(const vk::Buffer &buffer, vk::Image &image, const Size &sz, const CommandContext &context){
+    vk::CommandBuffer cb = SingleTimeCommandBegin(context.cmdPool, context.device);
+    vk::BufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = vk::Offset3D{0, 0, 0};
+    region.imageExtent = vk::Extent3D{
+        sz.width,
+        sz.height,
+        1
+    };
+
+    cb.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+    SingleTimeCommandEnd(context.cmdPool, context.device, cb, context.queue);
+}
+
+void TransitionImageLayout(const vk::Image& image, const vk::Format format, const vk::ImageLayout& oldLayout, const vk::ImageLayout &newLayout, const CommandContext &context){
+    vk::CommandBuffer cb = SingleTimeCommandBegin(context.cmdPool, context.device);
+    vk::ImageMemoryBarrier barrier{};
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    vk::PipelineStageFlags sourceStage;
+    vk::PipelineStageFlags destinationStage;
+
+    if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+        barrier.srcAccessMask = {};
+        barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+        sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+        destinationStage = vk::PipelineStageFlagBits::eTransfer;
+    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        sourceStage = vk::PipelineStageFlagBits::eTransfer;
+        destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+    } else {
+        throw std::invalid_argument("unsupported layout transition!");
+    }
+
+    cb.pipelineBarrier(sourceStage, destinationStage,
+        {},
+        0, nullptr,
+        0, nullptr,
+        1, &barrier);
+
+    SingleTimeCommandEnd(context.cmdPool, context.device, cb, context.queue);
+}
+
+struct ImageParam{
+    Size size;
+    vk::Format format;
+    vk::ImageTiling tiling;
+    vk::ImageUsageFlags usage;
+    vk::MemoryPropertyFlags properties;
+};
+
+auto CreateImage(const ImageParam &param, const CommandContext &context) {
+    vk::ImageCreateInfo imageInfo{};
+    imageInfo.imageType = vk::ImageType::e2D;
+    imageInfo.extent.width = param.size.width;
+    imageInfo.extent.height = param.size.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = param.format;
+    imageInfo.tiling = param.tiling;
+    imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+    imageInfo.usage = param.usage;
+    imageInfo.samples = vk::SampleCountFlagBits::e1;
+    imageInfo.sharingMode = vk::SharingMode::eExclusive;
+    
+    auto image = context.device.createImage(imageInfo);
+
+    vk::MemoryRequirements memRequirements = context.device.getImageMemoryRequirements(image);
+    vk::MemoryAllocateInfo allocInfo{};
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(context.phyDevice, memRequirements.memoryTypeBits, param.properties);
+    auto imageMemory = context.device.allocateMemory(allocInfo);
+
+    context.device.bindImageMemory(image, imageMemory, 0);
+    return std::make_pair(image, imageMemory);
+}
+
+void VulkanInstance::createTextureImage(){
+    int width, height, channel;
+    auto pixels = stbi_load(Utils::FileSystem::PathJoin(kResourcesPath, "1.jpg").c_str(), &width, &height, &channel, STBI_rgb_alpha);
+    if(!pixels){
+        throw std::runtime_error("Failed to load image");
+    }
+
+    const vk::DeviceSize imageSize = width * height * 4;
+    auto [buffer, memory] = CreateBuffer(_phyDevice, *_logicDevice, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    void *pdata = _logicDevice->mapMemory(memory, 0, imageSize, {});
+    memcpy(pdata, pixels, imageSize);
+    _logicDevice->unmapMemory(memory);
+
+    stbi_image_free(pixels);
+
+    ImageParam param;
+    param.format = vk::Format::eR8G8B8A8Srgb;
+    param.size = Size{(uint32_t)width, (uint32_t)height};
+    param.tiling = vk::ImageTiling::eOptimal;
+    param.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
+    param.properties = vk::MemoryPropertyFlagBits::eDeviceLocal;
+
+    auto context = CommandContext{_cmdPool,
+        *_logicDevice,
+        _graphicsQueue,
+        _phyDevice};
+
+    auto [image, imageMemory] = CreateImage(param, context);
+
+    TransitionImageLayout(image, param.format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, context);
+    CopyBuffer2Image(buffer, image, param.size, context);
+    TransitionImageLayout(image, param.format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, context);\
+
+    _logicDevice->destroyBuffer(buffer);
+    _logicDevice->freeMemory(memory);
 }
 
 void VulkanInstance::createVertexBuffer(){
@@ -802,6 +957,7 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
         createGraphicsPipeline();
         createFrameBuffers();
         createCommandPool();
+        createTextureImage();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffer();
@@ -833,6 +989,8 @@ void VulkanInstance::destroy(){
     }
 
     _logicDevice->destroyDescriptorPool(_descriptorPool);
+    _logicDevice->destroyImage(_imageTexture);
+    _logicDevice->freeMemory(_imageMemory);
     _logicDevice->destroyDescriptorSetLayout(_descSetLayout);
     _logicDevice->destroyCommandPool(_cmdPool);    
     if(_logicDevice){

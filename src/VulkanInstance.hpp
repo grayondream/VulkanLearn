@@ -42,6 +42,8 @@ private:
     void recordCommandBuffer(const uint32_t index);
     void createDescriptorPool();
     void createDescriptorSets();
+    void createTextureImage();
+    
 public:
     bool _frameBufferResized{false};
     
@@ -81,4 +83,6 @@ private:
     std::vector<void*> _mvpData{};
     vk::DescriptorPool _descriptorPool{};
     std::vector<vk::DescriptorSet> _descriptorSets{};
+    vk::DeviceMemory _imageMemory{};
+    vk::Image _imageTexture{};
 };
