@@ -759,6 +759,8 @@ void VulkanInstance::createTextureImage(){
 
     _logicDevice->destroyBuffer(buffer);
     _logicDevice->freeMemory(memory);
+    _imageMemory = imageMemory;
+    _imageTexture = image;
 }
 
 void VulkanInstance::createVertexBuffer(){
