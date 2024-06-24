@@ -113,7 +113,8 @@ inline static bool CheckDeviceSuitable(const vk::PhysicalDevice& device, const v
         swapChainAdequate = !status.formats.empty() && !status.modes.empty();
     }
 
-    return indices && extSupported && swapChainAdequate;
+    auto feat = device.getFeatures();
+    return indices && extSupported && swapChainAdequate && feat.samplerAnisotropy;
 }
 
 inline static vk::Extent2D ChooseSwapExtend(const vk::SurfaceCapabilitiesKHR &capas, const uint32_t width, const uint32_t height){
@@ -204,6 +205,8 @@ void VulkanInstance::createLogicDevice(){
     }
 
     auto deviceFeat = vk::PhysicalDeviceFeatures();
+    deviceFeat.samplerAnisotropy = vk::True;
+
     auto createInfo = vk::DeviceCreateInfo(
         vk::DeviceCreateFlags(),
         queueCreateInfos.size(),
@@ -220,6 +223,42 @@ void VulkanInstance::createLogicDevice(){
     _logicDevice = _phyDevice.createDeviceUnique(createInfo);
     _graphicsQueue = _logicDevice->getQueue(indics.graphics.value(), 0);
     _presentQueue = _logicDevice->getQueue(indics.present.value(), 0);
+}
+
+vk::ImageView CreateImageView(const vk::Device &device, const vk::Image &image, const vk::Format format){
+    vk::ImageViewCreateInfo viewInfo{};
+    viewInfo.image = image;
+    viewInfo.viewType = vk::ImageViewType::e2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    return device.createImageView(viewInfo);
+}
+
+void VulkanInstance::createTextureSampler() {
+    auto properties = _phyDevice.getProperties();
+    vk::SamplerCreateInfo samplerInfo{};
+    samplerInfo.magFilter = vk::Filter::eLinear;
+    samplerInfo.minFilter = vk::Filter::eLinear;
+    samplerInfo.addressModeU = vk::SamplerAddressMode::eRepeat;
+    samplerInfo.addressModeV = vk::SamplerAddressMode::eRepeat;
+    samplerInfo.addressModeW = vk::SamplerAddressMode::eRepeat;
+    samplerInfo.anisotropyEnable = vk::True;
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    samplerInfo.unnormalizedCoordinates = vk::False;
+    samplerInfo.compareEnable = vk::False;
+    samplerInfo.compareOp = vk::CompareOp::eAlways;
+    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    _textureSampler = _logicDevice->createSampler(samplerInfo);
+}
+
+void VulkanInstance::createTextureImageView() {
+    _textureView = CreateImageView(*_logicDevice, _imageTexture, vk::Format::eR8G8B8A8Srgb);
 }
 
 void VulkanInstance::createSwapChain(){
@@ -358,20 +397,7 @@ void VulkanInstance::setupDebugCallback(){
 void VulkanInstance::createImageViews(){
     _swapChainImageViews.resize(_swapImages.size());
     for (size_t i = 0; i < _swapImages.size(); i++) {
-        vk::ImageViewCreateInfo createInfo = {};
-        createInfo.image = _swapImages[i];
-        createInfo.viewType = vk::ImageViewType::e2D;
-        createInfo.format = _swapForamt;
-        createInfo.components.r = vk::ComponentSwizzle::eIdentity;
-        createInfo.components.g = vk::ComponentSwizzle::eIdentity;
-        createInfo.components.b = vk::ComponentSwizzle::eIdentity;
-        createInfo.components.a = vk::ComponentSwizzle::eIdentity;
-        createInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-        _swapChainImageViews[i] = _logicDevice->createImageView(createInfo);
+        _swapChainImageViews[i] = CreateImageView(*_logicDevice, _swapImages[i], _swapForamt);
     }
 }
 
@@ -960,6 +986,8 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
         createFrameBuffers();
         createCommandPool();
         createTextureImage();
+        createTextureImageView();
+        createTextureSampler();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffer();
@@ -990,6 +1018,8 @@ void VulkanInstance::destroy(){
         _logicDevice->freeMemory(_mvpMemory[i]);
     }
 
+    _logicDevice->destroySampler(_textureSampler);
+    _logicDevice->destroyImageView(_textureView);
     _logicDevice->destroyDescriptorPool(_descriptorPool);
     _logicDevice->destroyImage(_imageTexture);
     _logicDevice->freeMemory(_imageMemory);

@@ -43,6 +43,8 @@ private:
     void createDescriptorPool();
     void createDescriptorSets();
     void createTextureImage();
+    void createTextureImageView();
+    void createTextureSampler();
     
 public:
     bool _frameBufferResized{false};
@@ -85,4 +87,6 @@ private:
     std::vector<vk::DescriptorSet> _descriptorSets{};
     vk::DeviceMemory _imageMemory{};
     vk::Image _imageTexture{};
+    vk::ImageView _textureView{};
+    vk::Sampler _textureSampler;
 };
