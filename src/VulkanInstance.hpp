@@ -45,6 +45,7 @@ private:
     void createTextureImage();
     void createTextureImageView();
     void createTextureSampler();
+    void createDepthResources();
     
 public:
     bool _frameBufferResized{false};
@@ -89,4 +90,8 @@ private:
     vk::Image _imageTexture{};
     vk::ImageView _textureView{};
     vk::Sampler _textureSampler;
+
+    vk::Image _depthImage;
+    vk::DeviceMemory _depthImageMemory;
+    vk::ImageView _depthImageView;
 };
