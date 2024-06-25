@@ -1,3 +1,4 @@
+#include <array>
 #define GLM_FORCE_RADIANS
 #include "VulkanInstance.hpp"
 #include "Utils.hpp"
@@ -51,10 +52,10 @@ static const std::vector<const char*> kDeviceExtensions = {
 };
 
 const std::vector<Vertex> gVertics = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
 
 const std::vector<uint16_t> gVerticsIndex = {    0, 1, 2, 2, 3, 0};
@@ -895,9 +896,17 @@ void VulkanInstance::createDescriptorSetLayout(){
     uboLayout.stageFlags = vk::ShaderStageFlagBits::eVertex;
     uboLayout.descriptorType = vk::DescriptorType::eUniformBuffer;
 
+    vk::DescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+    samplerLayoutBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+
+    std::array<vk::DescriptorSetLayoutBinding, 2> binds{uboLayout, samplerLayoutBinding};
     vk::DescriptorSetLayoutCreateInfo info{};
-    info.bindingCount = 1;
-    info.pBindings = &uboLayout;
+    info.bindingCount = binds.size();
+    info.pBindings = binds.data();
 
     _descSetLayout = _logicDevice->createDescriptorSetLayout(info);
 }
@@ -916,12 +925,15 @@ void VulkanInstance::createUniformBuffer(){
 }
 
 void VulkanInstance::createDescriptorPool(){
-    vk::DescriptorPoolSize poolSize{};
-    poolSize.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    std::array<vk::DescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    poolSizes[0].type = vk::DescriptorType::eUniformBuffer;
+    poolSizes[1].type = vk::DescriptorType::eCombinedImageSampler;
 
     vk::DescriptorPoolCreateInfo poolInfo{};
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = poolSizes.size();
+    poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     _descriptorPool = _logicDevice->createDescriptorPool(poolInfo, nullptr);
@@ -941,15 +953,27 @@ void VulkanInstance::createDescriptorSets(){
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(MVPUniformMatrix);
 
-        vk::WriteDescriptorSet descriptorWrite{};
-        descriptorWrite.dstSet = _descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = vk::DescriptorType::eUniformBuffer;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
+        vk::DescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = vk::ImageLayout::eReadOnlyOptimal;
+        imageInfo.imageView = _textureView;
+        imageInfo.sampler = _textureSampler;
 
-        _logicDevice->updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+        std::array<vk::WriteDescriptorSet, 2> descriptorWrites{};
+        descriptorWrites[0].dstSet = _descriptorSets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = vk::DescriptorType::eUniformBuffer;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+        descriptorWrites[1].dstSet = _descriptorSets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &imageInfo;
+
+        _logicDevice->updateDescriptorSets(descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
 }
 
@@ -957,7 +981,7 @@ void VulkanInstance::updateUniformBuffer(const uint32_t currentImage) {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count() * 10;
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count() * 2;
 
     MVPUniformMatrix ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
