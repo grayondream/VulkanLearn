@@ -603,8 +603,8 @@ void VulkanInstance::createRenderPass(){
     colorAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
     vk::AttachmentReference depthAttachmentRef = {};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+    depthAttachmentRef.attachment = 1; // 假设深度附件是第二个附件
+    depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
     vk::SubpassDescription subpass = {};
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
@@ -838,17 +838,14 @@ void VulkanInstance::createTextureImage(){
         _graphicsQueue,
         _phyDevice};
 
-    auto [image, imageMemory] = CreateImage(param, context);
+     std::tie(_imageTexture, _imageMemory) = CreateImage(param, context);
 
-    TransitionImageLayout(image, param.format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, context);
-    CopyBuffer2Image(buffer, image, param.size, context);
-    TransitionImageLayout(image, param.format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, context);\
+    TransitionImageLayout(_imageTexture, param.format, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, context);
+    CopyBuffer2Image(buffer, _imageTexture, param.size, context);
+    TransitionImageLayout(_imageTexture, param.format, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, context);\
 
-    _logicDevice->waitIdle();
     _logicDevice->destroyBuffer(buffer);
     _logicDevice->freeMemory(memory);
-    _imageMemory = imageMemory;
-    _imageTexture = image;
 }
 
 void VulkanInstance::createVertexBuffer(){
@@ -1059,7 +1056,7 @@ void VulkanInstance::updateUniformBuffer(const uint32_t currentImage) {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count() * 2;
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count() * 0.1;
 
     MVPUniformMatrix ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
@@ -1149,7 +1146,6 @@ void VulkanInstance::destroy(){
 
 void VulkanInstance::recordCommandBuffer(const uint32_t i){
     vk::CommandBufferBeginInfo beginInfo = {};
-    beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
     _cmdBuffers[i].begin(beginInfo);
 
     {
@@ -1160,7 +1156,7 @@ void VulkanInstance::recordCommandBuffer(const uint32_t i){
         renderPassInfo.renderArea.extent = _swapExtent;
 
         std::array<vk::ClearValue, 2> clearColor{};
-        clearColor[0].color = vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f};
+        clearColor[0].color = vk::ClearColorValue{std::array<float, 4>{1.0f, 1.0f, 1.0f, 1.0f}};
         clearColor[1].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
 
         renderPassInfo.clearValueCount = clearColor.size();
