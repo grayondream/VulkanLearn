@@ -26,6 +26,7 @@
 #include <glm/gtx/transform2.hpp>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <tiny_obj_loader.h>
 
 using namespace Utils;
 using namespace Utils::Vulkan;
