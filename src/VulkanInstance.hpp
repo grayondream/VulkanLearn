@@ -48,7 +48,7 @@ private:
     void createTextureSampler();
     void createDepthResources();
     void loadModel();
-    
+
 public:
     bool _frameBufferResized{false};
     
@@ -99,4 +99,6 @@ private:
 
     std::vector<Vertex> _vertices;
     std::vector<uint32_t> _indices;
+
+    uint32_t _mipLevels;
 };
