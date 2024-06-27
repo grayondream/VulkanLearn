@@ -1,6 +1,7 @@
 #include <array>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
 #include "VulkanInstance.hpp"
 #include "Utils.hpp"
 #include "Log.hpp"
@@ -24,9 +25,12 @@
 #include <vulkan/vulkan_handles.hpp>
 #include <chrono>
 #include <glm/gtx/transform2.hpp>
+#include <glm/gtx/hash.hpp>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
+#include <unordered_map>
 
 using namespace Utils;
 using namespace Utils::Vulkan;
@@ -49,25 +53,21 @@ static constexpr const bool gEnableValidationLayer = false;
 
 static constexpr const char* kShaderPath = "/home/ares/home/Code/VulkanLearn/shader";
 static constexpr const char* kResourcesPath = "/home/ares/home/Code/VulkanLearn/resources";
+static constexpr const char* kChaletModelFileName = "chalet.obj";
+static constexpr const char* kChaletTextureFileName = "chalet.jpg";
+static constexpr const char* kVikingModelFileName = "viking_room.obj";
+static constexpr const char* kVikingTextureFileName = "viking_room.png";
+
+std::string GetImageTexurePath(){
+    return FileSystem::PathJoin(kResourcesPath, kVikingTextureFileName);
+}
+
+std::string GetModelPath(){
+    return FileSystem::PathJoin(kResourcesPath, kVikingModelFileName);
+}
+
 static const std::vector<const char*> kDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
-
-const std::vector<Vertex> gVertics = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
-};
-
-const std::vector<uint16_t> gVerticsIndex = {        
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
 };
 
 static std::error_code CheckPrintVKExtensions(){
@@ -164,6 +164,44 @@ vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormat
     }
 
     return availableFormats[0];
+}
+
+void VulkanInstance::loadModel(){
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, GetModelPath().c_str())) {
+        throw std::runtime_error(warn + err);
+    }
+
+    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+    for (const auto& shape : shapes) {
+        for (const auto& index : shape.mesh.indices) {
+            Vertex vertex{};
+
+            vertex.pos = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]
+            };
+
+            vertex.texCoord = {
+                attrib.texcoords[2 * index.texcoord_index + 0],
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            vertex.color = {1.0f, 1.0f, 1.0f};
+
+            if (uniqueVertices.count(vertex) == 0) {
+                uniqueVertices[vertex] = static_cast<uint32_t>(_vertices.size());
+                _vertices.push_back(vertex);
+            }
+
+            _indices.push_back(uniqueVertices[vertex]);
+        }
+    }
 }
 
 void VulkanInstance::cleanSwapChain(){
@@ -814,7 +852,7 @@ auto CreateImage(const ImageParam &param, const CommandContext &context) {
 
 void VulkanInstance::createTextureImage(){
     int width, height, channel;
-    auto pixels = stbi_load(Utils::FileSystem::PathJoin(kResourcesPath, "1.jpg").c_str(), &width, &height, &channel, STBI_rgb_alpha);
+    auto pixels = stbi_load(GetImageTexurePath().c_str(), &width, &height, &channel, STBI_rgb_alpha);
     if(!pixels){
         throw std::runtime_error("Failed to load image");
     }
@@ -850,14 +888,14 @@ void VulkanInstance::createTextureImage(){
 }
 
 void VulkanInstance::createVertexBuffer(){
-    vk::DeviceSize bufferSize = sizeof(gVertics[0]) * gVertics.size();
+    vk::DeviceSize bufferSize = sizeof(_vertices[0]) * _vertices.size();
     vk::Buffer stagingBuffer{};
     vk::DeviceMemory stagingBufferMemory{};
     auto [buffer, bufferMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     auto data = _logicDevice->mapMemory(bufferMemory, 0, bufferSize);
-    memcpy(data, gVertics.data(), bufferSize);
+    memcpy(data, _vertices.data(), bufferSize);
     _logicDevice->unmapMemory(bufferMemory);
 
     auto [buff, buffMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer,
@@ -871,14 +909,14 @@ void VulkanInstance::createVertexBuffer(){
 }
 
 void VulkanInstance::createIndexBuffer(){
-    vk::DeviceSize bufferSize = sizeof(gVerticsIndex[0]) * gVerticsIndex.size();
+    vk::DeviceSize bufferSize = sizeof(_indices[0]) * _indices.size();
     vk::Buffer stagingBuffer{};
     vk::DeviceMemory stagingBufferMemory{};
     auto [buffer, bufferMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
     vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     auto data = _logicDevice->mapMemory(bufferMemory, 0, bufferSize);
-    memcpy(data, gVerticsIndex.data(), bufferSize);
+    memcpy(data, _indices.data(), bufferSize);
     _logicDevice->unmapMemory(bufferMemory);
 
     auto [buff, buffMemory] = CreateBuffer(_phyDevice, *_logicDevice, bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer,
@@ -924,7 +962,7 @@ void VulkanInstance::createCommandBuffer(){
         _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
 
         //_cmdBuffers[i].draw(3, 1, 0, 0);
-        _cmdBuffers[i].drawIndexed(gVerticsIndex.size(), 1, 0, 0, 0);
+        _cmdBuffers[i].drawIndexed(_indices.size(), 1, 0, 0, 0);
         _cmdBuffers[i].endRenderPass();
         _cmdBuffers[i].end();
     }
@@ -1073,6 +1111,7 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, FrameBufferResizedCallback);
     try{
+        loadModel();
         createInstance();
         setupDebugCallback();
         createSurface(window);
@@ -1169,10 +1208,10 @@ void VulkanInstance::recordCommandBuffer(const uint32_t i){
             vk::Buffer vertexBuffers[] = { _vertexBuffer };
             vk::DeviceSize offsets[] = { 0 };
             _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
-            _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
+            _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint32);
             _cmdBuffers[i].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _renderLayout, 0, _descriptorSets[i], {});
             //_cmdBuffers[i].draw(3, 1, 0, 0);
-            _cmdBuffers[i].drawIndexed(gVerticsIndex.size(), 1, 0, 0, 0);
+            _cmdBuffers[i].drawIndexed(_indices.size(), 1, 0, 0, 0);
         }
         _cmdBuffers[i].endRenderPass();
     }

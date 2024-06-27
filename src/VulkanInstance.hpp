@@ -4,6 +4,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_handles.hpp>
+#include "Vertext.hpp"
 
 class VulkanInstance {
 public:
@@ -46,6 +47,7 @@ private:
     void createTextureImageView();
     void createTextureSampler();
     void createDepthResources();
+    void loadModel();
     
 public:
     bool _frameBufferResized{false};
@@ -94,4 +96,7 @@ private:
     vk::Image _depthImage;
     vk::DeviceMemory _depthImageMemory;
     vk::ImageView _depthImageView;
+
+    std::vector<Vertex> _vertices;
+    std::vector<uint32_t> _indices;
 };

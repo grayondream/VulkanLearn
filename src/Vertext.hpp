@@ -1,10 +1,12 @@
 #pragma once
+#define GLM_ENABLE_EXPERIMENTAL
 #include <array>
 #include <glm/fwd.hpp>
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_structs.hpp>
+#include <glm/gtx/hash.hpp>
 
 struct Vertex{
     glm::vec3 pos{};
@@ -40,3 +42,15 @@ public:
         return desc;
     }
 };
+
+inline bool operator==(const Vertex &rst, const Vertex &snd){
+    return rst.pos == snd.pos && rst.color == snd.color && rst.texCoord == snd.texCoord;
+}
+
+namespace std {
+    template<> struct hash<Vertex> {
+        size_t operator()(Vertex const& vertex) const {
+            return ((hash<glm::vec3>()(vertex.pos) ^ (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^ (hash<glm::vec2>()(vertex.texCoord) << 1);
+        }
+    };
+}
