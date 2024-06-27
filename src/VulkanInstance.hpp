@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include "Vertext.hpp"
 
@@ -48,6 +49,7 @@ private:
     void createTextureSampler();
     void createDepthResources();
     void loadModel();
+    void createColorResources();
 
 public:
     bool _frameBufferResized{false};
@@ -101,4 +103,13 @@ private:
     std::vector<uint32_t> _indices;
 
     uint32_t _mipLevels;
+    vk::SampleCountFlagBits _msaaSamples = vk::SampleCountFlagBits::e1;
+
+    vk::Image _colorImage;
+    vk::DeviceMemory _colorImageMemory;
+    vk::ImageView _colorImageView;
+
+    vk::Image _resolveImage;
+    vk::DeviceMemory _resolveImageMemory;
+    vk::ImageView _resolveImageView;
 };

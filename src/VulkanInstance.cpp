@@ -239,6 +239,7 @@ void VulkanInstance::recreateSwapChain(){
 
     createSwapChain();
     createImageViews();
+    createColorResources();
     createDepthResources();
     createFrameBuffers();
 }
@@ -294,7 +295,6 @@ vk::ImageView CreateImageView(const vk::Device &device, const vk::Image &image, 
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
     viewInfo.subresourceRange.levelCount = info.mipLevel;
-
     return device.createImageView(viewInfo);
 }
 
@@ -364,6 +364,19 @@ void VulkanInstance::createSwapChain(){
     _swapExtent = extent;
 }
 
+vk::SampleCountFlagBits GetMaxUsableSampleCount(const vk::PhysicalDevice& physicalDevice) {
+    auto physicalDeviceProperties = physicalDevice.getProperties();
+    vk::SampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+    if (counts & vk::SampleCountFlagBits::e64) { return  vk::SampleCountFlagBits::e64; }
+    if (counts & vk::SampleCountFlagBits::e32) { return vk::SampleCountFlagBits::e32; }
+    if (counts & vk::SampleCountFlagBits::e16) { return vk::SampleCountFlagBits::e16; }
+    if (counts & vk::SampleCountFlagBits::e8) { return vk::SampleCountFlagBits::e8; }
+    if (counts & vk::SampleCountFlagBits::e4) { return vk::SampleCountFlagBits::e4; }
+    if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
+
+    return vk::SampleCountFlagBits::e1;
+}
+
 void VulkanInstance::SelectRunningDevice(){
     auto devices = _instance->enumeratePhysicalDevices();
     if(devices.empty()){
@@ -374,6 +387,7 @@ void VulkanInstance::SelectRunningDevice(){
         //LOGI("The {}th device is {}", i, devices[i].)
         if(CheckDeviceSuitable(device, _surface)){
             _phyDevice = device;
+            _msaaSamples = GetMaxUsableSampleCount(_phyDevice);
             break;//only find one device;
         }
     }
@@ -537,7 +551,7 @@ void VulkanInstance::createGraphicsPipeline(){
     
     vk::PipelineMultisampleStateCreateInfo multisampling = {};
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisampling.rasterizationSamples = _msaaSamples;
 
     vk::PipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.depthTestEnable = VK_TRUE;
@@ -586,7 +600,8 @@ void VulkanInstance::createFrameBuffers(){
     _framebuffers.resize(_swapChainImageViews.size());
 
     for (size_t i = 0; i < _swapChainImageViews.size(); i++) {
-        std::array<vk::ImageView, 2> attachments = {
+        std::array<vk::ImageView, 3> attachments = {
+            _colorImageView,
             _swapChainImageViews[i],
             _depthImageView
         };
@@ -630,7 +645,7 @@ bool HasStencilComponent(vk::Format format) {
 void VulkanInstance::createRenderPass(){
     vk::AttachmentDescription colorAttachment = {};
     colorAttachment.format = _swapForamt;
-    colorAttachment.samples = vk::SampleCountFlagBits::e1;
+    colorAttachment.samples = _msaaSamples;
     colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
     colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
     colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
@@ -640,7 +655,7 @@ void VulkanInstance::createRenderPass(){
 
     vk::AttachmentDescription depthAttachment{};
     depthAttachment.format = FindDepthFormat(_phyDevice);
-    depthAttachment.samples = vk::SampleCountFlagBits::e1;
+    depthAttachment.samples = _msaaSamples;
     depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
     depthAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;
     depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
@@ -652,15 +667,31 @@ void VulkanInstance::createRenderPass(){
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
+    vk::AttachmentDescription colorAttachmentResolve = {};
+    colorAttachmentResolve.format = _swapForamt;
+    colorAttachmentResolve.samples = vk::SampleCountFlagBits::e1;
+    colorAttachmentResolve.loadOp = vk::AttachmentLoadOp::eDontCare;
+    colorAttachmentResolve.storeOp = vk::AttachmentStoreOp::eStore;
+    colorAttachmentResolve.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    colorAttachmentResolve.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    colorAttachmentResolve.initialLayout = vk::ImageLayout::eUndefined;
+    colorAttachmentResolve.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+
+
     vk::AttachmentReference depthAttachmentRef = {};
     depthAttachmentRef.attachment = 1; // 假设深度附件是第二个附件
     depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+    vk::AttachmentReference colorAttachmentResolveRef{};
+    colorAttachmentResolveRef.attachment = 2;
+    colorAttachmentResolveRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
     vk::SubpassDescription subpass = {};
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
+    subpass.pResolveAttachments = &colorAttachmentResolveRef;
 
     vk::SubpassDependency dependency = {};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -670,7 +701,7 @@ void VulkanInstance::createRenderPass(){
     dependency.srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     
-    std::array<vk::AttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+    std::array<vk::AttachmentDescription, 3> attachments = {colorAttachment, depthAttachment, colorAttachmentResolve};
     vk::RenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.attachmentCount = attachments.size();
     renderPassInfo.pAttachments = attachments.data();
@@ -833,6 +864,7 @@ struct ImageParam{
     vk::ImageUsageFlags usage;
     vk::MemoryPropertyFlags properties;
     uint32_t mipLevel{};
+    vk::SampleCountFlagBits msaaSamples{};
 };
 
 auto CreateImage(const ImageParam &param, const CommandContext &context) {
@@ -841,19 +873,19 @@ auto CreateImage(const ImageParam &param, const CommandContext &context) {
     imageInfo.extent.width = param.size.width;
     imageInfo.extent.height = param.size.height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = param.format;
     imageInfo.tiling = param.tiling;
     imageInfo.initialLayout = vk::ImageLayout::eUndefined;
     imageInfo.usage = param.usage;
-    imageInfo.samples = vk::SampleCountFlagBits::e1;
+    imageInfo.samples = param.msaaSamples;
     imageInfo.sharingMode = vk::SharingMode::eExclusive;
     imageInfo.mipLevels = param.mipLevel;
 
     auto image = context.device.createImage(imageInfo);
 
     vk::MemoryRequirements memRequirements = context.device.getImageMemoryRequirements(image);
+
     vk::MemoryAllocateInfo allocInfo{};
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = FindMemoryType(context.phyDevice, memRequirements.memoryTypeBits, param.properties);
@@ -961,6 +993,7 @@ void VulkanInstance::createTextureImage(){
     param.usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc;
     param.properties = vk::MemoryPropertyFlagBits::eDeviceLocal;
     param.mipLevel = _mipLevels;
+    param.msaaSamples = vk::SampleCountFlagBits::e1;
 
     auto context = CommandContext{_cmdPool,
         *_logicDevice,
@@ -975,7 +1008,7 @@ void VulkanInstance::createTextureImage(){
 
     _logicDevice->destroyBuffer(buffer);
     _logicDevice->freeMemory(memory);
-    
+
     GenerateMipmaps(_imageTexture, param, context);
 }
 
@@ -1165,6 +1198,23 @@ void VulkanInstance::createDescriptorSets(){
         _logicDevice->updateDescriptorSets(descriptorWrites.size(), descriptorWrites.data(), 0, nullptr);
     }
 }
+void VulkanInstance::createColorResources(){
+    ImageParam param;
+    param.format = _swapForamt;
+    param.size = Size{(uint32_t)_swapExtent.width, (uint32_t)_swapExtent.height};
+    param.tiling = vk::ImageTiling::eOptimal;
+    param.usage = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment;
+    param.properties = vk::MemoryPropertyFlagBits::eDeviceLocal;
+    param.mipLevel = 1;
+    param.msaaSamples = _msaaSamples;
+    
+    auto context = CommandContext{_cmdPool,
+        *_logicDevice,
+        _graphicsQueue,
+        _phyDevice};
+    std::tie(_colorImage, _colorImageMemory) = CreateImage(param, context);
+    _colorImageView = CreateImageView(*_logicDevice, _colorImage, {param.format, vk::ImageAspectFlagBits::eColor,1});
+}
 
 void VulkanInstance::createDepthResources(){
     const auto depthFormat = FindDepthFormat(_phyDevice);
@@ -1175,6 +1225,7 @@ void VulkanInstance::createDepthResources(){
     param.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
     param.properties = vk::MemoryPropertyFlagBits::eDeviceLocal;
     param.mipLevel = 1;
+    param.msaaSamples = _msaaSamples;
 
     auto context = CommandContext{_cmdPool,
         *_logicDevice,
@@ -1216,6 +1267,7 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
         createDescriptorSetLayout();
         createGraphicsPipeline();
         createCommandPool();
+        createColorResources();
         createDepthResources();
         createFrameBuffers();
         createTextureImage();
@@ -1239,6 +1291,9 @@ std::error_code VulkanInstance::initialize(GLFWwindow *window, const uint32_t wi
 void VulkanInstance::destroy(){
     if(!_instance) return;
     cleanSwapChain();
+    _logicDevice->destroyImageView(_colorImageView);
+    _logicDevice->destroyImage(_colorImage);
+    _logicDevice->freeMemory(_colorImageMemory);
     _logicDevice->destroyBuffer(_indexBuffer);
     _logicDevice->freeMemory(_indexMemory);
     _logicDevice->destroyBuffer(_vertexBuffer);
