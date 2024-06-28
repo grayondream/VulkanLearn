@@ -614,7 +614,7 @@ void VulkanInstance::createGraphicsPipeline(){
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = nullptr;
     pipelineInfo.pDepthStencilState = &depthStencil;
-    //pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.pDynamicState = &dynamicState;
 
     _renderPipeline = _logicDevice->createGraphicsPipeline(nullptr, pipelineInfo).value;
 }
@@ -1088,33 +1088,33 @@ void VulkanInstance::createCommandBuffer(){
     allocInfo.commandBufferCount = (uint32_t)_cmdBuffers.size();
 
     _cmdBuffers = _logicDevice->allocateCommandBuffers(allocInfo);
-        for (size_t i = 0; i < _cmdBuffers.size(); i++) {
-        vk::CommandBufferBeginInfo beginInfo = {};
-        beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
-        _cmdBuffers[i].begin(beginInfo);
-        vk::RenderPassBeginInfo renderPassInfo = {};
-        renderPassInfo.renderPass = _renderPass;
-        renderPassInfo.framebuffer = _framebuffers[i];
-        renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
-        renderPassInfo.renderArea.extent = _swapExtent;
+    // for (size_t i = 0; i < _cmdBuffers.size(); i++) {
+    //     vk::CommandBufferBeginInfo beginInfo = {};
+    //     beginInfo.flags = vk::CommandBufferUsageFlagBits::eSimultaneousUse;
+    //     _cmdBuffers[i].begin(beginInfo);
+    //     vk::RenderPassBeginInfo renderPassInfo = {};
+    //     renderPassInfo.renderPass = _renderPass;
+    //     renderPassInfo.framebuffer = _framebuffers[i];
+    //     renderPassInfo.renderArea.offset = vk::Offset2D{ 0, 0 };
+    //     renderPassInfo.renderArea.extent = _swapExtent;
 
-        vk::ClearValue clearColor = { std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 1.0f } };
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
+    //     vk::ClearValue clearColor = { std::array<float, 4>{ 1.0f, 1.0f, 1.0f, 1.0f } };
+    //     renderPassInfo.clearValueCount = 1;
+    //     renderPassInfo.pClearValues = &clearColor;
 
-        _cmdBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-        _cmdBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
+    //     _cmdBuffers[i].beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    //     _cmdBuffers[i].bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
 
-        vk::Buffer vertexBuffers[] = { _vertexBuffer };
-        vk::DeviceSize offsets[] = { 0 };
-        _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
-        _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
+    //     vk::Buffer vertexBuffers[] = { _vertexBuffer };
+    //     vk::DeviceSize offsets[] = { 0 };
+    //     _cmdBuffers[i].bindVertexBuffers(0, 1, vertexBuffers, offsets);
+    //     _cmdBuffers[i].bindIndexBuffer(_indexBuffer, 0, vk::IndexType::eUint16);
 
-        //_cmdBuffers[i].draw(3, 1, 0, 0);
-        _cmdBuffers[i].drawIndexed(_indices.size(), 1, 0, 0, 0);
-        _cmdBuffers[i].endRenderPass();
-        _cmdBuffers[i].end();
-    }
+    //     //_cmdBuffers[i].draw(3, 1, 0, 0);
+    //     _cmdBuffers[i].drawIndexed(_indices.size(), 1, 0, 0, 0);
+    //     _cmdBuffers[i].endRenderPass();
+    //     _cmdBuffers[i].end();
+    // }
 }
 
 void VulkanInstance::createSyncObject(){
@@ -1375,6 +1375,23 @@ void VulkanInstance::recordCommandBuffer(const uint32_t imageIndex){
 
         cmdBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
         cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, _renderPipeline);
+        {
+            vk::Viewport viewport{};
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = (float) _swapExtent.width;
+            viewport.height = (float) _swapExtent.height;
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+
+            vk::Rect2D scissor{};
+            scissor.offset = vk::Offset2D{0, 0};
+            scissor.extent = _swapExtent;
+
+            cmdBuffer.setViewport(0, 1, &viewport);
+            cmdBuffer.setScissor(0, 1, &scissor);
+        }
+
         {
             vk::Buffer vertexBuffers[] = { _vertexBuffer };
             vk::DeviceSize offsets[] = { 0 };
